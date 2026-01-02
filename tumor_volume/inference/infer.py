@@ -1,0 +1,2 @@
+def infer():
+    print("infer...")

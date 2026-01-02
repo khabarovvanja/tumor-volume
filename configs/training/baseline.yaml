@@ -1,0 +1,6 @@
+device: mps
+epochs: 10
+batch_size: 1
+num_workers: 4
+lr: 1e-4
+# class_weights: [0.2, 0.8]

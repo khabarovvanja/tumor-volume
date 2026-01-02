@@ -1,2 +1,5 @@
-Model:
-  name: tumor-volume-estimator
+defaults:
+  - data: pet
+  - model: unet3d
+  - training: baseline
+  - logging: mlflow

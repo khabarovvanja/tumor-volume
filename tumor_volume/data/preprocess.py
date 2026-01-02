@@ -13,13 +13,14 @@ def load_nii(path):
     nii = nib.load(path)
     nii = nib.as_closest_canonical(nii)
     data = nii.get_fdata().astype(np.float32)
-    spacing = nii.header.get_zooms()
+    spacing = nii.header.get_zooms()[:3]      # ← ТОЛЬКО 3
+    spacing = tuple(float(s) for s in spacing)  # ← обычные float
     return data, spacing, nii.affine
 
 
 def resample(volume, spacing, target_spacing, is_mask=False):
     sitk_vol = sitk.GetImageFromArray(volume)
-    sitk_vol.SetSpacing(spacing[::-1])
+    sitk_vol.SetSpacing(tuple(spacing[::-1]))   # z,y,x → x,y,z
 
     new_size = [
         int(round(volume.shape[i] * spacing[i] / target_spacing[i]))
@@ -30,7 +31,7 @@ def resample(volume, spacing, target_spacing, is_mask=False):
     resampler.SetOutputSpacing(target_spacing[::-1])
     resampler.SetSize(new_size[::-1])
     resampler.SetInterpolator(
-        sitk.sitkNearest if is_mask else sitk.sitkLinear
+        sitk.sitkNearestNeighbor if is_mask else sitk.sitkLinear
     )
     resampler.SetOutputDirection(sitk_vol.GetDirection())
     resampler.SetOutputOrigin(sitk_vol.GetOrigin())
@@ -98,8 +99,8 @@ def main(img_dir, mask_dir, out_img_dir, out_mask_dir):
 
 if __name__ == "__main__":
     main(
-        img_dir="data/images_nii",
-        mask_dir="data/masks_nii",
-        out_img_dir="data/images_preprocessed",
-        out_mask_dir="data/masks_preprocessed",
+        img_dir="/Users/ivankhabarov/vscode/diploma/data/RawData/Task002_SHORT/imagesTr",
+        mask_dir="/Users/ivankhabarov/vscode/diploma/data/RawData/Task002_SHORT/labelsTr",
+        out_img_dir="data/processed/images",
+        out_mask_dir="data/processed/masks",
     )

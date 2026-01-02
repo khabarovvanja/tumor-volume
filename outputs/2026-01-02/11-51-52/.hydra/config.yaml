@@ -1,0 +1,26 @@
+data:
+  root_dir: data/processed
+  dataset:
+    images_dir: data/processed/images
+    masks_dir: data/processed/masks
+    patch_size:
+    - 96
+    - 96
+    - 96
+    samples_per_volume: 16
+model:
+  in_channels: 1
+  num_classes: 2
+training:
+  device: mps
+  epochs: 200
+  batch_size: 1
+  num_workers: 4
+  lr: 0.0001
+  class_weights:
+  - 0.2
+  - 0.8
+logging:
+  uri: http://127.0.0.1:8080
+  experiment_name: tumor_volume
+  run_name: unet3d_baseline

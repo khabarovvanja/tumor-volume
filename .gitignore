@@ -220,5 +220,8 @@ __marimo__/
 *.log
 outputs/
 mlruns
+.dvc/cache/
+.dvc/tmp/
+.dvc/config.local
 
 

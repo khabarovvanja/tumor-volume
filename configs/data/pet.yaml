@@ -1,4 +1,4 @@
-root_dir: data/processed
+root_dir: data
 
 dataset:
   images_dir: data/processed/images

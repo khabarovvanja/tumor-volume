@@ -15,13 +15,26 @@ from tumor_volume.data.dvc_utils import download_data
 from tumor_volume.models.unet_3d import UNet3D
 from tumor_volume.models.losses import DiceLoss
 from tumor_volume.utils.logging import setup_mlflow
+from tumor_volume.data.preprocess import nifti2npy
 
 @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
 def train_entrypoint(cfg: DictConfig) -> None:
     run_training(cfg)
 
 def run_training(cfg: DictConfig) -> None:
-    # download_data(cfg.data)
+    download_data(cfg.data)
+
+    img_dir = cfg.data.root_dir + "/raw/images"
+    mask_dir = cfg.data.root_dir + "/raw/masks"
+    out_img_dir = cfg.data.root_dir + "/processed/images"
+    out_mask_dir = cfg.data.root_dir + "/processed/masks"
+
+    # создаём npy файлы только если их нет
+    if not Path(out_img_dir).exists() or not any(Path(out_img_dir).iterdir()):
+        print("Converting NIfTI to NumPy...")
+        nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
+        print("Done.")
+
 
     setup_mlflow(cfg.logging)
     with tempfile.TemporaryDirectory() as tmpdir: # save config to mlflow

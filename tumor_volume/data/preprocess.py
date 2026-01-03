@@ -81,7 +81,7 @@ def preprocess_case(img_path, mask_path, out_img, out_mask):
     save(mask, affine, out_mask)
 
 
-def main(img_dir, mask_dir, out_img_dir, out_mask_dir):
+def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir):
     os.makedirs(out_img_dir, exist_ok=True)
     os.makedirs(out_mask_dir, exist_ok=True)
 
@@ -98,9 +98,9 @@ def main(img_dir, mask_dir, out_img_dir, out_mask_dir):
 
 
 if __name__ == "__main__":
-    main(
-        img_dir="/Users/ivankhabarov/vscode/diploma/data/RawData/Task002_SHORT/imagesTr",
-        mask_dir="/Users/ivankhabarov/vscode/diploma/data/RawData/Task002_SHORT/labelsTr",
+    nifti2npy(
+        img_dir="data/raw/images",
+        mask_dir="data/raw/masks",
         out_img_dir="data/processed/images",
         out_mask_dir="data/processed/masks",
     )

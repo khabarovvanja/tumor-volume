@@ -207,7 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 *.DS_Store
-*.__pycache__
 *.gz
 *.nii.gz
 *.zip
@@ -215,4 +214,11 @@ __marimo__/
 *.tar.gz
 *.csv
 *.npy
+*.pth
+*.pt
+*.ckpt
+*.log
+outputs/
+mlruns
+
 

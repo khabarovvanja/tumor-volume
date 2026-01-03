@@ -4,17 +4,24 @@ from pathlib import Path
 import nibabel as nib  # для .nii/.nii.gz (опционально)
 
 class PETPatchDataset(torch.utils.data.Dataset):
-    def __init__(self, images_dir, masks_dir, patch_size=(96, 96, 96), samples_per_volume=16):
+    def __init__(
+            self, 
+            images_dir, 
+            masks_dir, 
+            patch_size=(96, 96, 96), 
+            samples_per_volume=16,
+            train_split=0.8,
+            seed=42
+        ):
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
         self.patch_size = patch_size
         self.samples_per_volume = samples_per_volume
 
-        # собираем полный список файлов
         self.images = sorted(list(self.images_dir.glob("*")))
         self.masks = sorted(list(self.masks_dir.glob("*")))
 
-        assert len(self.images) == len(self.masks), "Количество изображений и масок не совпадает"
+        assert len(self.images) == len(self.masks), "The number of images and masks does not match"
 
     def __len__(self):
         return len(self.images) * self.samples_per_volume
@@ -25,17 +32,13 @@ class PETPatchDataset(torch.utils.data.Dataset):
         img = self._load_volume(self.images[vol_idx])
         mask = self._load_volume(self.masks[vol_idx])
 
-        # нормализация
+        # z-core normalization
         img = (img - img.mean()) / (img.std() + 1e-6)
 
-        # выбираем центр патча (с tumor sampling)
         center = self._get_random_patch_center(mask, p_tumor=0.7)
-
-        # вырезаем патч
         img_patch = self._crop_patch(img, center, self.patch_size)
         mask_patch = self._crop_patch(mask, center, self.patch_size)
 
-        # в тензоры
         img_patch = torch.from_numpy(img_patch).float().unsqueeze(0)  # [1, D, H, W]
         mask_patch = torch.from_numpy(mask_patch).long()              # [D, H, W]
 

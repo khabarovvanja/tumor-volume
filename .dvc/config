@@ -1,4 +1,4 @@
-[core]
+[core]    
     remote = selectel-public
     autostage = true
 ['remote "selectel-public"']

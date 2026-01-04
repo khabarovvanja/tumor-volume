@@ -1,12 +1,20 @@
 # Estimation of tumor volume by PET-CT in children with Hodgkin's lymphoma
 
 ## Setup
+Before installing, make sure you have `Poetry` installed and `Mlflow` running at `127.0.0.1:8080`. Dependency installation:
+
     git clone https://github.com/khabarovvanja/tumor-volume.git
     cd tumor-volume
     make setup
 
 ## Train
-Должен присутствовать раздел Train, в котором рассказано, как запустить тренировку вашей модели. Если у вас есть несколько этапов (загрузка данных, preprocessing, несколько вариантов модели и проч), нужно описать каждый из них. Обязательно привести команды, которыми нужно запускать то или иное действие потому как мы обсуждали разные варианты работы с CLI)
+Start training with default hyperparameters:
+
+    poetry run python -m tumor_volume.commands train
+
+You can start training with custom settings also:
+
+    poetry run python -m tumor_volume.commands train training.epochs=100 training.train_split=0.7
 
 ## Production preparation
 Опишите шаги подготовки натренированной модели к работе, что для этого нужно сделать. Сюда могут входить перевод в onnx, tensorrt, etc.

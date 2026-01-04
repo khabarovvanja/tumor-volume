@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from pathlib import Path
-import nibabel as nib  # для .nii/.nii.gz (опционально)
+import nibabel as nib 
 
 class PETPatchDataset(torch.utils.data.Dataset):
     def __init__(
@@ -10,8 +10,6 @@ class PETPatchDataset(torch.utils.data.Dataset):
             masks_dir, 
             patch_size=(96, 96, 96), 
             samples_per_volume=16,
-            train_split=0.8,
-            seed=42
         ):
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)

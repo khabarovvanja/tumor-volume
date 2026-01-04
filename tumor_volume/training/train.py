@@ -17,10 +17,7 @@ from tumor_volume.models.losses import DiceLoss
 from tumor_volume.utils.logging import setup_mlflow
 from tumor_volume.data.preprocess import nifti2npy
 
-@hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
-def train_entrypoint(cfg: DictConfig) -> None:
-    run_training(cfg)
-
+# @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
 def run_training(cfg: DictConfig) -> None:
     download_data(cfg.data)
 
@@ -56,11 +53,16 @@ def run_training(cfg: DictConfig) -> None:
         # weight=torch.tensor(cfg.training.class_weights).to(cfg.training.device)
     )
 
-    dataset = PETPatchDataset(**cfg.data.dataset)
-    train_size = int(len(dataset) * cfg.data.dataset.train_split)
+    dataset = PETPatchDataset(
+        cfg.data.images_dir, 
+        cfg.data.masks_dir, 
+        cfg.data.patch_size, 
+        cfg.data.samples_per_volume
+    )
+    train_size = int(len(dataset) * cfg.training.train_split)
     val_size = len(dataset) - train_size
 
-    generator = torch.Generator().manual_seed(cfg.data.dataset.seed)
+    generator = torch.Generator().manual_seed(cfg.data.seed)
 
     train_dataset, val_dataset = random_split(
         dataset, [train_size, val_size], generator=generator

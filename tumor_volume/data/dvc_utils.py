@@ -1,14 +1,14 @@
 import subprocess
 from pathlib import Path
 
-def download_data(data_cfg) -> None:
+def download_data(cfg) -> None:
     """
     Download raw data via DVC if it is not present locally.
     Assumes raw.dvc is in data root and creates data/raw/
     """
-    data_root = Path(data_cfg.root_dir)  # обычно "data/"
+    data_root = Path(cfg.root_dir)  # обычно "data/"
     raw_dvc = data_root / "raw.dvc"      # путь к raw.dvc
-    raw_dir = data_root / "raw"           # папка, которую создаст DVC
+    raw_dir = data_root / "raw"          # папка, которую создаст DVC
 
     if not raw_dvc.exists():
         raise RuntimeError(f"DVC file '{raw_dvc}' does not exist. Make sure it is in your repo.")

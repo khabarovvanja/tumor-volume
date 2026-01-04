@@ -1,9 +1,6 @@
 root_dir: data
-
-dataset:
-  images_dir: data/processed/images
-  masks_dir: data/processed/masks
-  patch_size: [96, 96, 96]
-  samples_per_volume: 16
-  train_split: 0.8
-  seed: 42
+images_dir: data/processed/images
+masks_dir: data/processed/masks
+patch_size: [96, 96, 96]
+samples_per_volume: 16
+seed: 42

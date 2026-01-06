@@ -7,4 +7,4 @@
     region = ru-3
 
 ['remote "public"']
-    url = https://s3.ru-3.storage.selcloud.ru/tumor-volume
+    url = https://b940c72e-ba92-4c7c-aad8-550c3df49ae8.selstorage.ru

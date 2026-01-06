@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+
 @torch.no_grad()
 def logits_to_mask(logits: torch.Tensor) -> np.ndarray:
     """

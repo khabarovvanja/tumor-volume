@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from tqdm import tqdm
+
 
 @torch.no_grad()
 def sliding_window_inference(
@@ -31,7 +31,7 @@ def sliding_window_inference(
     for z in range(0, max(D - pd + 1, 1), stride[0]):
         for y in range(0, max(H - ph + 1, 1), stride[1]):
             for x in range(0, max(W - pw + 1, 1), stride[2]):
-                patch = volume[z:z+pd, y:y+ph, x:x+pw]
+                patch = volume[z : z + pd, y : y + ph, x : x + pw]
                 patches.append(patch)
                 coords.append((z, y, x))
 
@@ -51,5 +51,5 @@ def _run_batch(patches, coords, logits_sum, count_map, model, device):
 
     for i, (z, y, x0) in enumerate(coords):
         pd, ph, pw = out.shape[2:]
-        logits_sum[:, z:z+pd, y:y+ph, x0:x0+pw] += out[i]
-        count_map[z:z+pd, y:y+ph, x0:x0+pw] += 1
+        logits_sum[:, z : z + pd, y : y + ph, x0 : x0 + pw] += out[i]
+        count_map[z : z + pd, y : y + ph, x0 : x0 + pw] += 1

@@ -1,6 +1,9 @@
 import numpy as np
 
-def compute_tumor_volume(mask: np.ndarray, spacing: tuple[float, float, float] = (2.0, 2.0, 2.0)) -> float:
+
+def compute_tumor_volume(
+    mask: np.ndarray, spacing: tuple[float, float, float] = (2.0, 2.0, 2.0)
+) -> float:
     """
     mask: [D, H, W] binary
     spacing: (z, y, x) in mm

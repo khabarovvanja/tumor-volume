@@ -1,21 +1,20 @@
-import numpy as np
-import hydra
-import torch
-from torch.utils.data import DataLoader
-from omegaconf import DictConfig
-from tqdm import tqdm
 import tempfile
-from omegaconf import OmegaConf
-import mlflow
 from pathlib import Path
-from torch.utils.data import random_split
+
+import mlflow
+import numpy as np
+import torch
+from omegaconf import DictConfig, OmegaConf
+from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm
 
 from tumor_volume.data.dataset import PETPatchDataset
 from tumor_volume.data.dvc_utils import download_data
-from tumor_volume.models.unet_3d import UNet3D
-from tumor_volume.models.losses import DiceLoss
-from tumor_volume.utils.logging import setup_mlflow
 from tumor_volume.data.preprocess import nifti2npy
+from tumor_volume.models.losses import DiceLoss
+from tumor_volume.models.unet_3d import UNet3D
+from tumor_volume.utils.logging import setup_mlflow
+
 
 # @hydra.main(config_path="../../configs", config_name="config", version_base="1.3")
 def run_training(cfg: DictConfig) -> None:
@@ -32,9 +31,8 @@ def run_training(cfg: DictConfig) -> None:
         nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
         print("Done.")
 
-
     setup_mlflow(cfg.logging)
-    with tempfile.TemporaryDirectory() as tmpdir: # save config to mlflow
+    with tempfile.TemporaryDirectory() as tmpdir:  # save config to mlflow
         cfg_path = Path(tmpdir) / "config.yaml"
         OmegaConf.save(cfg, cfg_path)
         mlflow.log_artifact(str(cfg_path))
@@ -44,9 +42,7 @@ def run_training(cfg: DictConfig) -> None:
         num_classes=cfg.model.num_classes,
     ).to(cfg.training.device)
 
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=cfg.training.lr
-    )
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.training.lr)
 
     dice_loss = DiceLoss()
     ce_loss = torch.nn.CrossEntropyLoss(
@@ -54,10 +50,10 @@ def run_training(cfg: DictConfig) -> None:
     )
 
     dataset = PETPatchDataset(
-        cfg.data.images_dir, 
-        cfg.data.masks_dir, 
-        cfg.data.patch_size, 
-        cfg.data.samples_per_volume
+        cfg.data.images_dir,
+        cfg.data.masks_dir,
+        cfg.data.patch_size,
+        cfg.data.samples_per_volume,
     )
     train_size = int(len(dataset) * cfg.training.train_split)
     val_size = len(dataset) - train_size
@@ -91,7 +87,9 @@ def run_training(cfg: DictConfig) -> None:
 
     for epoch in range(cfg.training.epochs):
         model.train()
-        for images, masks in tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg.training.epochs}"):
+        for images, masks in tqdm(
+            train_loader, desc=f"Epoch {epoch+1}/{cfg.training.epochs}"
+        ):
             images = images.to(cfg.training.device)
             masks = masks.to(cfg.training.device)
 
@@ -146,6 +144,7 @@ def run_training(cfg: DictConfig) -> None:
         mlflow.log_metric("val/loss_epoch", val_metrics["loss"], step=epoch)
         mlflow.log_metric("val/dice_loss_epoch", val_metrics["dice_loss"], step=epoch)
         mlflow.log_metric("val/ce_loss_epoch", val_metrics["ce_loss"], step=epoch)
+
 
 @torch.no_grad()
 def run_validation(model, loader, dice_loss, ce_loss, device):

@@ -1,38 +1,36 @@
 import os
-import numpy as np
+
 import nibabel as nib
+import numpy as np
 import SimpleITK as sitk
 from tqdm import tqdm
 
 TARGET_SPACING = (2.0, 2.0, 2.0)
 MIN_NONZERO = 1e-6
-SAVE_FORMAT = "npy"   # "npy" or "nii"
+SAVE_FORMAT = "npy"  # "npy" or "nii"
 
 
 def load_nii(path):
     nii = nib.load(path)
     nii = nib.as_closest_canonical(nii)
     data = nii.get_fdata().astype(np.float32)
-    spacing = nii.header.get_zooms()[:3]      # ← ТОЛЬКО 3
+    spacing = nii.header.get_zooms()[:3]  # ← ТОЛЬКО 3
     spacing = tuple(float(s) for s in spacing)  # ← обычные float
     return data, spacing, nii.affine
 
 
 def resample(volume, spacing, target_spacing, is_mask=False):
     sitk_vol = sitk.GetImageFromArray(volume)
-    sitk_vol.SetSpacing(tuple(spacing[::-1]))   # z,y,x → x,y,z
+    sitk_vol.SetSpacing(tuple(spacing[::-1]))  # z,y,x → x,y,z
 
     new_size = [
-        int(round(volume.shape[i] * spacing[i] / target_spacing[i]))
-        for i in range(3)
+        int(round(volume.shape[i] * spacing[i] / target_spacing[i])) for i in range(3)
     ]
 
     resampler = sitk.ResampleImageFilter()
     resampler.SetOutputSpacing(target_spacing[::-1])
     resampler.SetSize(new_size[::-1])
-    resampler.SetInterpolator(
-        sitk.sitkNearestNeighbor if is_mask else sitk.sitkLinear
-    )
+    resampler.SetInterpolator(sitk.sitkNearestNeighbor if is_mask else sitk.sitkLinear)
     resampler.SetOutputDirection(sitk_vol.GetDirection())
     resampler.SetOutputOrigin(sitk_vol.GetOrigin())
 
@@ -50,8 +48,8 @@ def crop_nonzero(img, mask):
     x0, x1 = coords[2].min(), coords[2].max()
 
     return (
-        img[z0:z1+1, y0:y1+1, x0:x1+1],
-        mask[z0:z1+1, y0:y1+1, x0:x1+1],
+        img[z0 : z1 + 1, y0 : y1 + 1, x0 : x1 + 1],
+        mask[z0 : z1 + 1, y0 : y1 + 1, x0 : x1 + 1],
     )
 
 
@@ -92,7 +90,9 @@ def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir):
         mask_path = os.path.join(mask_dir, name)
 
         out_img = os.path.join(out_img_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
-        out_mask = os.path.join(out_mask_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
+        out_mask = os.path.join(
+            out_mask_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}")
+        )
 
         preprocess_case(img_path, mask_path, out_img, out_mask)
 

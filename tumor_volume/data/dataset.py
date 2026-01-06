@@ -1,16 +1,18 @@
+from pathlib import Path
+
+import nibabel as nib
 import numpy as np
 import torch
-from pathlib import Path
-import nibabel as nib 
+
 
 class PETPatchDataset(torch.utils.data.Dataset):
     def __init__(
-            self, 
-            images_dir, 
-            masks_dir, 
-            patch_size=(96, 96, 96), 
-            samples_per_volume=16,
-        ):
+        self,
+        images_dir,
+        masks_dir,
+        patch_size=(96, 96, 96),
+        samples_per_volume=16,
+    ):
         self.images_dir = Path(images_dir)
         self.masks_dir = Path(masks_dir)
         self.patch_size = patch_size
@@ -19,7 +21,9 @@ class PETPatchDataset(torch.utils.data.Dataset):
         self.images = sorted(list(self.images_dir.glob("*")))
         self.masks = sorted(list(self.masks_dir.glob("*")))
 
-        assert len(self.images) == len(self.masks), "The number of images and masks does not match"
+        assert len(self.images) == len(
+            self.masks
+        ), "The number of images and masks does not match"
 
     def __len__(self):
         return len(self.images) * self.samples_per_volume
@@ -38,7 +42,7 @@ class PETPatchDataset(torch.utils.data.Dataset):
         mask_patch = self._crop_patch(mask, center, self.patch_size)
 
         img_patch = torch.from_numpy(img_patch).float().unsqueeze(0)  # [1, D, H, W]
-        mask_patch = torch.from_numpy(mask_patch).long()              # [D, H, W]
+        mask_patch = torch.from_numpy(mask_patch).long()  # [D, H, W]
 
         return img_patch, mask_patch
 
@@ -55,11 +59,13 @@ class PETPatchDataset(torch.utils.data.Dataset):
             coords = np.argwhere(mask > 0)
             return coords[np.random.randint(len(coords))]
         else:
-            return np.array([
-                np.random.randint(mask.shape[0]),
-                np.random.randint(mask.shape[1]),
-                np.random.randint(mask.shape[2]),
-            ])
+            return np.array(
+                [
+                    np.random.randint(mask.shape[0]),
+                    np.random.randint(mask.shape[1]),
+                    np.random.randint(mask.shape[2]),
+                ]
+            )
 
     def _crop_patch(self, vol, center, size):
         d, h, w = vol.shape
@@ -69,4 +75,4 @@ class PETPatchDataset(torch.utils.data.Dataset):
         y0 = np.clip(center[1] - sh // 2, 0, h - sh)
         x0 = np.clip(center[2] - sw // 2, 0, w - sw)
 
-        return vol[z0:z0+sd, y0:y0+sh, x0:x0+sw]
+        return vol[z0 : z0 + sd, y0 : y0 + sh, x0 : x0 + sw]

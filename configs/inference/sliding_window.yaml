@@ -1,5 +1,7 @@
 input:
-  volume: "data/processed/images/PETCT_7e56b0b62c_05-27-2006-NA-PET-CT Ganzkoerper  primaer mit KM-57089.npy"
+  volume:
+    "data/processed/images/PETCT_7e56b0b62c_05-27-2006-NA-PET-CT
+    Ganzkoerper  primaer mit KM-57089.npy"
 
 output:
   dir: outputs/inference/example

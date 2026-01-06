@@ -51,6 +51,7 @@ def setup_mlflow(cfg: DictConfig) -> None:
     # логируем все гиперпараметры (flattened)
     mlflow.log_params(_flatten_dict(cfg))
 
+
 def _flatten_dict(
     cfg: DictConfig,
     parent_key: str | None = None,

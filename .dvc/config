@@ -5,6 +5,6 @@
     url = s3://tumor-segment
     endpointurl = https://s3.ru-3.storage.selcloud.ru
     region = ru-3
-    
+
 ['remote "public"']
     url = https://6f30b5a8-26d8-47cf-b862-8e0f347dcd10.selstorage.ru

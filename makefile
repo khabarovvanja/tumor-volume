@@ -1,44 +1,51 @@
 PYTHON_VERSION := 3.10.19
+
 PYENV_ROOT := $(HOME)/.pyenv
+PYENV_BIN := $(PYENV_ROOT)/bin/pyenv
+PYTHON_BIN := $(PYENV_ROOT)/versions/$(PYTHON_VERSION)/bin/python
+POETRY_REAL := $(HOME)/.local/bin/poetry
+POETRY_WRAPPER := ./poetry
 
-.PHONY: setup
-setup:
-	@echo ">>> Installing system dependencies"
-	@if command -v apt-get >/dev/null 2>&1; then \
-		sudo apt-get update && sudo apt-get install -y \
-		build-essential curl git \
-		libssl-dev zlib1g-dev libbz2-dev \
-		libreadline-dev libsqlite3-dev llvm \
-		libncurses5-dev libncursesw5-dev \
-		xz-utils tk-dev libffi-dev liblzma-dev; \
-	elif command -v brew >/dev/null 2>&1; then \
-		brew update && brew install \
-		openssl readline sqlite3 xz zlib pyenv; \
-	fi
+.PHONY: setup setup-local install-pyenv install-python install-poetry install-deps train infer
 
-	@echo ">>> Installing pyenv (if not exists)"
-	@if [ ! -d "$(PYENV_ROOT)" ]; then \
+setup: install-pyenv install-python install-poetry create-poetry-wrapper install-deps
+	@echo "✅ Environment setup completed"
+
+install-pyenv:
+	@if [ ! -x "$(PYENV_BIN)" ]; then \
+		echo "🔧 Installing pyenv..."; \
 		curl https://pyenv.run | bash; \
+	else \
+		echo "✅ pyenv already installed"; \
 	fi
 
-	@echo ">>> Initializing pyenv"
-	@export PYENV_ROOT="$(PYENV_ROOT)" && \
-	export PATH="$$PYENV_ROOT/bin:$$PATH" && \
-	eval "$$(pyenv init -)" && \
-	pyenv install -s $(PYTHON_VERSION) && \
-	pyenv local $(PYTHON_VERSION)
+install-python:
+	@if [ ! -x "$(PYTHON_BIN)" ]; then \
+		echo "🐍 Installing Python $(PYTHON_VERSION)..."; \
+		$(PYENV_BIN) install -s $(PYTHON_VERSION); \
+	else \
+		echo "✅ Python $(PYTHON_VERSION) already installed"; \
+	fi; \
+	$(PYENV_BIN) local $(PYTHON_VERSION)
 
-	@echo ">>> Installing Poetry (if not installed)"
-	@command -v poetry >/dev/null 2>&1 || \
-		curl -sSL https://install.python-poetry.org | python$(PYTHON_VERSION) -
+install-poetry:
+	@if [ ! -x "$(POETRY_REAL)" ]; then \
+		echo "📦 Installing Poetry..."; \
+		$(PYTHON_BIN) -m pip install --user poetry; \
+	else \
+		echo "✅ Poetry already installed"; \
+	fi
 
-	@echo ">>> Configuring Poetry environment"
-	@export PYENV_ROOT="$(PYENV_ROOT)" && \
-	export PATH="$$PYENV_ROOT/bin:$$PATH" && \
-	eval "$$(pyenv init -)" && \
-	poetry env use $$(pyenv which python)
+create-poetry-wrapper:
+	@if [ ! -f "$(POETRY_WRAPPER)" ]; then \
+		echo "🔗 Creating local poetry wrapper"; \
+		echo '#!/usr/bin/env bash' > $(POETRY_WRAPPER); \
+		echo 'exec "$(POETRY_REAL)" "$$@"' >> $(POETRY_WRAPPER); \
+		chmod +x $(POETRY_WRAPPER); \
+	else \
+		echo "✅ Poetry wrapper already exists"; \
+	fi
 
-	@echo ">>> Installing project dependencies"
-	@poetry install
-
-	@echo ">>> Setup completed successfully"
+install-deps:
+	@echo "📚 Installing dependencies via Poetry"; \
+	$(POETRY_WRAPPER) install

@@ -5,7 +5,6 @@ from hydra.core.global_hydra import GlobalHydra
 from tumor_volume.training.train import run_training
 from tumor_volume.inference.infer import run_inference
 
-
 def _compose_cfg(overrides: tuple[str, ...]):
     """
     Safe Hydra compose wrapper for Fire.
@@ -20,7 +19,6 @@ def _compose_cfg(overrides: tuple[str, ...]):
         )
     return cfg
 
-
 def train(*overrides: str):
     """
     Example:
@@ -29,11 +27,9 @@ def train(*overrides: str):
     cfg = _compose_cfg(overrides)
     run_training(cfg)
 
-
 def infer(*overrides: str):
     cfg = _compose_cfg(overrides)
     run_inference(cfg)
-
 
 def main():
     fire.Fire(
@@ -42,7 +38,6 @@ def main():
             "infer": infer,
         }
     )
-
 
 if __name__ == "__main__":
     main()

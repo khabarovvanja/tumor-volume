@@ -1,5 +1,6 @@
 defaults:
   - data: pet
+  - inference: sliding_window
   - model: unet3d
   - training: baseline
   - logging: mlflow

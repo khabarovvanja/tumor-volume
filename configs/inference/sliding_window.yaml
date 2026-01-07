@@ -1,0 +1,18 @@
+input:
+  volume:
+    "data/processed/images/PETCT_7e56b0b62c_05-27-2006-NA-PET-CT
+    Ganzkoerper  primaer mit KM-57089.npy"
+
+output:
+  dir: outputs/inference
+
+checkpoint:
+  path: checkpoints/best_model.pth
+
+sliding_window:
+  patch_size: [96, 96, 96]
+  overlap: 0.5
+  batch_size: 2
+
+device: mps
+num_classes: 2

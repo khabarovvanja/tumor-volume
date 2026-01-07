@@ -12,22 +12,16 @@ from tumor_volume.inference.volume import compute_tumor_volume
 from tumor_volume.models.unet_3d import UNet3D
 
 
-# @hydra.main(
-#     config_path="../../configs/inference",
-#     config_name="sliding_window",
-#     version_base="1.3",
-# )
 def run_inference(cfg: DictConfig):
 
     input_path = Path(cfg.inference.input.volume)
-    output_dir = Path(cfg.inference.output.dir)
+    filename = input_path.stem
+    output_dir = Path(cfg.inference.output.dir) / filename
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # -------- load volume --------
     volume = np.load(input_path)
     volume = (volume - volume.mean()) / (volume.std() + 1e-6)
 
-    # -------- load model --------
     model = UNet3D(
         in_channels=1,
         num_classes=cfg.inference.num_classes,
@@ -38,7 +32,6 @@ def run_inference(cfg: DictConfig):
     model.to(cfg.inference.device)
     model.eval()
 
-    # -------- inference --------
     logits = sliding_window_inference(
         volume=volume,
         model=model,
@@ -48,11 +41,9 @@ def run_inference(cfg: DictConfig):
         device=cfg.inference.device,
     )
 
-    # -------- postprocess --------
     mask = logits_to_mask(torch.from_numpy(logits))
     tumor_volume_ml = compute_tumor_volume(mask, TARGET_SPACING)
 
-    # -------- save outputs --------
     np.save(output_dir / "mask.npy", mask)
 
     with open(output_dir / "metrics.json", "w") as f:

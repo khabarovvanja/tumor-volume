@@ -14,8 +14,8 @@ def load_nii(path):
     nii = nib.load(path)
     nii = nib.as_closest_canonical(nii)
     data = nii.get_fdata().astype(np.float32)
-    spacing = nii.header.get_zooms()[:3]  # ← ТОЛЬКО 3
-    spacing = tuple(float(s) for s in spacing)  # ← обычные float
+    spacing = nii.header.get_zooms()[:3]
+    spacing = tuple(float(s) for s in spacing)
     return data, spacing, nii.affine
 
 
@@ -65,14 +65,11 @@ def preprocess_case(img_path, mask_path, out_img, out_mask):
     img, spacing, affine = load_nii(img_path)
     mask, _, _ = load_nii(mask_path)
 
-    # binarize mask
     mask = (mask > 0).astype(np.uint8)
 
-    # resample
     img = resample(img, spacing, TARGET_SPACING, is_mask=False)
     mask = resample(mask, spacing, TARGET_SPACING, is_mask=True)
 
-    # crop background
     img, mask = crop_nonzero(img, mask)
 
     save(img, affine, out_img)

@@ -1,4 +1,5 @@
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import mlflow
@@ -82,11 +83,15 @@ def run_training(cfg: DictConfig) -> None:
 
     checkpoint_dir = Path(cfg.training.checkpoint_dir)
     checkpoint_dir.mkdir(exist_ok=True)
-
-    global_step = 0
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     for epoch in range(cfg.training.epochs):
         model.train()
+
+        losses_list = []
+        ce_list = []
+        dice_list = []
+
         for images, masks in tqdm(
             train_loader, desc=f"Epoch {epoch+1}/{cfg.training.epochs}"
         ):
@@ -102,12 +107,14 @@ def run_training(cfg: DictConfig) -> None:
             loss.backward()
             optimizer.step()
 
-            # add to mlflow online loss graph
-            mlflow.log_metric("train/loss_step", loss.item(), step=global_step)
-            mlflow.log_metric("train/dice_loss_step", dice.item(), step=global_step)
-            mlflow.log_metric("train/ce_loss_step", ce.item(), step=global_step)
+            losses_list.append(loss.item())
+            ce_list.append(ce.item())
+            dice_list.append(dice.item())
 
-            global_step += 1
+        # add to mlflow online loss graph
+        mlflow.log_metric("train/loss_step", float(np.mean(losses_list)), step=epoch)
+        mlflow.log_metric("train/dice_loss_step", float(np.mean(dice_list)), step=epoch)
+        mlflow.log_metric("train/ce_loss_step", float(np.mean(ce_list)), step=epoch)
 
         val_metrics = run_validation(
             model,
@@ -118,6 +125,10 @@ def run_training(cfg: DictConfig) -> None:
         )
 
         current_val_loss = val_metrics["loss"]
+
+        experiment_folder = f"exp_{cfg.logging.run_name}_{session_id}"
+        checkpoint_dir = Path(cfg.training.checkpoint_dir) / experiment_folder
+        checkpoint_dir.mkdir(exist_ok=True, parents=True)
 
         if cfg.training.save_best and current_val_loss < best_val_loss:
             best_val_loss = current_val_loss

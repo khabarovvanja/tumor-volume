@@ -12,6 +12,25 @@ from tumor_volume.inference.volume import compute_tumor_volume
 from tumor_volume.models.unet_3d import UNet3D
 
 
+def _resolve_checkpoint_path(checkpoint_path: str) -> Path:
+    path = Path(checkpoint_path)
+    if path.exists():
+        return path
+
+    parent = path.parent if path.parent != Path("") else Path(".")
+    candidates = sorted(
+        parent.glob("exp_*/best_model*.pth"),
+        key=lambda candidate: candidate.stat().st_mtime,
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
+
+    raise FileNotFoundError(
+        f"Checkpoint '{checkpoint_path}' was not found and no saved experiment checkpoints were discovered."
+    )
+
+
 def run_inference(cfg: DictConfig):
 
     input_path = Path(cfg.inference.input.volume)
@@ -27,7 +46,8 @@ def run_inference(cfg: DictConfig):
         num_classes=cfg.inference.num_classes,
     )
 
-    ckpt = torch.load(cfg.inference.checkpoint.path, map_location=cfg.inference.device)
+    checkpoint_path = _resolve_checkpoint_path(cfg.inference.checkpoint.path)
+    ckpt = torch.load(checkpoint_path, map_location=cfg.inference.device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(cfg.inference.device)
     model.eval()

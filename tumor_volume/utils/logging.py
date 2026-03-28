@@ -25,7 +25,7 @@ def _get_git_commit_hash() -> str:
         return "unknown"
 
 
-def setup_mlflow(cfg: DictConfig) -> None:
+def setup_mlflow(cfg: DictConfig, run_name: str | None = None) -> None:
     """
     Инициализация MLflow.
 
@@ -40,7 +40,9 @@ def setup_mlflow(cfg: DictConfig) -> None:
     mlflow.set_experiment(cfg.experiment_name)
 
     run_kwargs: dict[str, Any] = {}
-    if "run_name" in cfg:
+    if run_name is not None:
+        run_kwargs["run_name"] = run_name
+    elif "run_name" in cfg:
         run_kwargs["run_name"] = cfg.run_name
 
     mlflow.start_run(**run_kwargs)

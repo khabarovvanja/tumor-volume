@@ -2,6 +2,17 @@ import numpy as np
 import torch
 
 
+def _compute_starts(size: int, patch: int, stride: int) -> list[int]:
+    if size <= patch:
+        return [0]
+
+    starts = list(range(0, size - patch + 1, stride))
+    last_start = size - patch
+    if starts[-1] != last_start:
+        starts.append(last_start)
+    return starts
+
+
 @torch.no_grad()
 def sliding_window_inference(
     volume: np.ndarray,
@@ -14,13 +25,25 @@ def sliding_window_inference(
     model.eval()
 
     C = model.out.out_channels  # num_classes
-    D, H, W = volume.shape
+    orig_d, orig_h, orig_w = volume.shape
     pd, ph, pw = patch_size
 
+    pad_d = max(pd - orig_d, 0)
+    pad_h = max(ph - orig_h, 0)
+    pad_w = max(pw - orig_w, 0)
+    if pad_d or pad_h or pad_w:
+        volume = np.pad(
+            volume,
+            ((0, pad_d), (0, pad_h), (0, pad_w)),
+            mode="constant",
+        )
+
+    D, H, W = volume.shape
+
     stride = (
-        int(pd * (1 - overlap)),
-        int(ph * (1 - overlap)),
-        int(pw * (1 - overlap)),
+        max(int(pd * (1 - overlap)), 1),
+        max(int(ph * (1 - overlap)), 1),
+        max(int(pw * (1 - overlap)), 1),
     )
 
     logits_sum = np.zeros((C, D, H, W), dtype=np.float32)
@@ -28,9 +51,13 @@ def sliding_window_inference(
 
     patches, coords = [], []
 
-    for z in range(0, max(D - pd + 1, 1), stride[0]):
-        for y in range(0, max(H - ph + 1, 1), stride[1]):
-            for x in range(0, max(W - pw + 1, 1), stride[2]):
+    z_starts = _compute_starts(D, pd, stride[0])
+    y_starts = _compute_starts(H, ph, stride[1])
+    x_starts = _compute_starts(W, pw, stride[2])
+
+    for z in z_starts:
+        for y in y_starts:
+            for x in x_starts:
                 patch = volume[z : z + pd, y : y + ph, x : x + pw]
                 patches.append(patch)
                 coords.append((z, y, x))
@@ -42,7 +69,8 @@ def sliding_window_inference(
     if patches:
         _run_batch(patches, coords, logits_sum, count_map, model, device)
 
-    return logits_sum / np.clip(count_map[None], 1e-6, None)
+    logits = logits_sum / np.clip(count_map[None], 1e-6, None)
+    return logits[:, :orig_d, :orig_h, :orig_w]
 
 
 def _run_batch(patches, coords, logits_sum, count_map, model, device):

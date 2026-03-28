@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "/home/khabar/.local/bin/poetry" "$@"

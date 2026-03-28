@@ -1,4 +1,4 @@
-device: mps
+device: cuda
 epochs: 10
 batch_size: 1
 num_workers: 4

@@ -1,6 +1,7 @@
 import tempfile
 from datetime import datetime
 from pathlib import Path
+import json
 
 import mlflow
 import numpy as np
@@ -39,8 +40,11 @@ def run_training(cfg: DictConfig) -> None:
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 cfg_path = Path(tmpdir) / "config.yaml"
+                split_manifest_path = Path(tmpdir) / "split_manifest.json"
                 OmegaConf.save(cfg, cfg_path)
+                _save_split_manifest(split, split_manifest_path)
                 mlflow.log_artifact(str(cfg_path))
+                mlflow.log_artifact(str(split_manifest_path))
 
             mlflow.set_tags(
                 {
@@ -80,6 +84,23 @@ def _prepare_data(cfg: DictConfig) -> None:
         print("Converting NIfTI to NumPy...")
         nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
         print("Done.")
+
+
+def _case_id_from_path(path: Path) -> str:
+    name = path.name
+    for suffix in (".nii.gz", ".nii", ".npy"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return path.stem
+
+
+def _save_split_manifest(split: dict[str, object], output_path: Path) -> None:
+    manifest = {"split_name": split["name"]}
+    for key in ("train", "val", "test"):
+        manifest[key] = [_case_id_from_path(image_path) for image_path, _ in split[key]]
+
+    with output_path.open("w", encoding="utf-8") as file:
+        json.dump(manifest, file, indent=2, ensure_ascii=False)
 
 
 def build_split_plan(

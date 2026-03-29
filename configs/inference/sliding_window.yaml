@@ -1,9 +1,11 @@
 input:
   volume:
-    "data/processed/images/PETCT_7e56b0b62c_05-27-2006-NA-PET-CT Ganzkoerper  primaer mit KM-57089.npy"
+    "data/raw/images/example_case.nii.gz"
 
 output:
   dir: outputs/inference
+  save_preview_gif: true
+  preview_gif_duration_ms: 80
 
 checkpoint:
   path: checkpoints/best_model.pth

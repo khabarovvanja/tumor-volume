@@ -20,16 +20,33 @@ def load_nii(path):
 
 
 def resample(volume, spacing, target_spacing, is_mask=False):
-    sitk_vol = sitk.GetImageFromArray(volume)
-    sitk_vol.SetSpacing(tuple(spacing[::-1]))  # z,y,x → x,y,z
+    return resample_to_spacing(
+        volume=volume,
+        input_spacing=spacing,
+        output_spacing=target_spacing,
+        is_mask=is_mask,
+    )
 
-    new_size = [
-        int(round(volume.shape[i] * spacing[i] / target_spacing[i])) for i in range(3)
-    ]
+
+def resample_to_spacing(
+    volume,
+    input_spacing,
+    output_spacing,
+    is_mask=False,
+    output_shape=None,
+):
+    sitk_vol = sitk.GetImageFromArray(volume)
+    sitk_vol.SetSpacing(tuple(input_spacing[::-1]))  # z,y,x → x,y,z
+
+    if output_shape is None:
+        output_shape = [
+            int(round(volume.shape[i] * input_spacing[i] / output_spacing[i]))
+            for i in range(3)
+        ]
 
     resampler = sitk.ResampleImageFilter()
-    resampler.SetOutputSpacing(target_spacing[::-1])
-    resampler.SetSize(new_size[::-1])
+    resampler.SetOutputSpacing(tuple(output_spacing[::-1]))
+    resampler.SetSize(list(output_shape[::-1]))
     resampler.SetInterpolator(sitk.sitkNearestNeighbor if is_mask else sitk.sitkLinear)
     resampler.SetOutputDirection(sitk_vol.GetDirection())
     resampler.SetOutputOrigin(sitk_vol.GetOrigin())
@@ -39,18 +56,45 @@ def resample(volume, spacing, target_spacing, is_mask=False):
 
 
 def crop_nonzero(img, mask):
-    coords = np.where(img > MIN_NONZERO)
-    if len(coords[0]) == 0:
+    bbox = compute_nonzero_bbox(img)
+    if bbox is None:
         return img, mask
 
-    z0, z1 = coords[0].min(), coords[0].max()
-    y0, y1 = coords[1].min(), coords[1].max()
-    x0, x1 = coords[2].min(), coords[2].max()
+    return crop_to_bbox(img, bbox), crop_to_bbox(mask, bbox)
+
+
+def compute_nonzero_bbox(img):
+    coords = np.where(img > MIN_NONZERO)
+    if len(coords[0]) == 0:
+        return None
 
     return (
-        img[z0 : z1 + 1, y0 : y1 + 1, x0 : x1 + 1],
-        mask[z0 : z1 + 1, y0 : y1 + 1, x0 : x1 + 1],
+        int(coords[0].min()),
+        int(coords[0].max()) + 1,
+        int(coords[1].min()),
+        int(coords[1].max()) + 1,
+        int(coords[2].min()),
+        int(coords[2].max()) + 1,
     )
+
+
+def crop_to_bbox(vol, bbox):
+    if bbox is None:
+        return vol
+
+    z0, z1, y0, y1, x0, x1 = bbox
+    return vol[z0:z1, y0:y1, x0:x1]
+
+
+def restore_from_bbox(cropped, full_shape, bbox, fill_value=0):
+    restored = np.full(full_shape, fill_value, dtype=cropped.dtype)
+    if bbox is None:
+        restored[...] = cropped
+        return restored
+
+    z0, z1, y0, y1, x0, x1 = bbox
+    restored[z0:z1, y0:y1, x0:x1] = cropped
+    return restored
 
 
 def save(volume, affine, path):

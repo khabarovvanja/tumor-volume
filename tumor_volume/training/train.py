@@ -20,6 +20,7 @@ from tumor_volume.models.metrics import (
     absolute_volume_difference,
     dice_coefficient,
     hd95,
+    relative_absolute_volume_difference,
 )
 from tumor_volume.models.unet_3d import UNet3D
 from tumor_volume.utils.logging import setup_mlflow
@@ -65,10 +66,12 @@ def run_training(cfg: DictConfig) -> None:
         mean_dice = float(np.mean([summary["test_dice"] for summary in fold_summaries]))
         mean_hd95 = float(np.mean([summary["test_hd95"] for summary in fold_summaries]))
         mean_avd = float(np.mean([summary["test_avd_ml"] for summary in fold_summaries]))
+        mean_ravd = float(np.mean([summary["test_ravd_percent"] for summary in fold_summaries]))
         print(
             f"K-fold summary: mean test Dice={mean_dice:.4f}, "
             f"mean test HD95={mean_hd95:.4f}, "
-            f"mean test AVD={mean_avd:.4f} ml"
+            f"mean test AVD={mean_avd:.4f} ml, "
+            f"mean test rAVD={mean_ravd:.2f}%"
         )
 
 
@@ -262,6 +265,7 @@ def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, 
         mlflow.log_metric("val/dice_epoch", val_metrics["dice"], step=epoch)
         mlflow.log_metric("val/hd95_epoch", val_metrics["hd95"], step=epoch)
         mlflow.log_metric("val/avd_ml_epoch", val_metrics["avd_ml"], step=epoch)
+        mlflow.log_metric("val/ravd_percent_epoch", val_metrics["ravd_percent"], step=epoch)
         mlflow.log_metric("val/dice_loss_epoch", val_metrics["dice_loss"], step=epoch)
         mlflow.log_metric("val/ce_loss_epoch", val_metrics["ce_loss"], step=epoch)
 
@@ -308,6 +312,7 @@ def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, 
             "test/dice": test_metrics["dice"],
             "test/hd95": test_metrics["hd95"],
             "test/avd_ml": test_metrics["avd_ml"],
+            "test/ravd_percent": test_metrics["ravd_percent"],
             "test/dice_loss": test_metrics["dice_loss"],
             "test/ce_loss": test_metrics["ce_loss"],
         }
@@ -317,13 +322,15 @@ def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, 
         f"{split['name']} summary: "
         f"test Dice={test_metrics['dice']:.4f}, "
         f"test HD95={test_metrics['hd95']:.4f}, "
-        f"test AVD={test_metrics['avd_ml']:.4f} ml"
+        f"test AVD={test_metrics['avd_ml']:.4f} ml, "
+        f"test rAVD={test_metrics['ravd_percent']:.2f}%"
     )
 
     return {
         "test_dice": test_metrics["dice"],
         "test_hd95": test_metrics["hd95"],
         "test_avd_ml": test_metrics["avd_ml"],
+        "test_ravd_percent": test_metrics["ravd_percent"],
     }
 
 
@@ -384,6 +391,7 @@ def evaluate_cases(
     dice_scores = []
     hd95_scores = []
     avd_scores = []
+    ravd_scores = []
 
     for image_path, mask_path in tqdm(cases, desc=desc):
         volume = load_volume(image_path).astype(np.float32)
@@ -415,6 +423,9 @@ def evaluate_cases(
         avd_scores.append(
             absolute_volume_difference(prediction, mask, TARGET_SPACING)
         )
+        ravd_scores.append(
+            relative_absolute_volume_difference(prediction, mask)
+        )
         losses.append(loss.item())
         dice_losses.append(dice.item())
         ce_losses.append(ce.item())
@@ -424,6 +435,7 @@ def evaluate_cases(
         "dice": float(np.mean(dice_scores)),
         "hd95": float(np.mean(hd95_scores)),
         "avd_ml": float(np.mean(avd_scores)),
+        "ravd_percent": float(np.mean(ravd_scores)),
         "dice_loss": float(np.mean(dice_losses)),
         "ce_loss": float(np.mean(ce_losses)),
     }

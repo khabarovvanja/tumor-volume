@@ -14,6 +14,20 @@ def absolute_volume_difference(
     return float(abs(pred_voxels - target_voxels) * voxel_volume_ml)
 
 
+def relative_absolute_volume_difference(
+    prediction: np.ndarray,
+    target: np.ndarray,
+    positive_label: int = 1,
+) -> float:
+    pred_voxels = int((prediction == positive_label).sum())
+    target_voxels = int((target == positive_label).sum())
+
+    if target_voxels == 0:
+        return 0.0 if pred_voxels == 0 else 100.0
+
+    return float(abs(pred_voxels - target_voxels) / target_voxels * 100.0)
+
+
 def dice_coefficient(
     prediction: np.ndarray,
     target: np.ndarray,

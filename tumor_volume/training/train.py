@@ -446,6 +446,8 @@ def _select_monitor_metric(metrics: dict[str, float], monitor_metric: str) -> fl
         "val/loss_epoch": "loss",
         "val/dice_epoch": "dice",
         "val/hd95_epoch": "hd95",
+        "val/avd_ml_epoch": "avd_ml",
+        "val/ravd_percent_epoch": "ravd_percent",
     }
     if monitor_metric not in key_map:
         raise ValueError(f"Unsupported monitor metric: {monitor_metric}")
@@ -455,6 +457,11 @@ def _select_monitor_metric(metrics: dict[str, float], monitor_metric: str) -> fl
 def _is_better(current: float, best: float | None, monitor_metric: str) -> bool:
     if best is None:
         return True
-    if "loss" in monitor_metric or "hd95" in monitor_metric:
+    if (
+        "loss" in monitor_metric
+        or "hd95" in monitor_metric
+        or "avd" in monitor_metric
+        or "ravd" in monitor_metric
+    ):
         return current < best
     return current > best

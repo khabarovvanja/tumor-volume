@@ -1,6 +1,6 @@
 input:
   volume:
-    "data/raw/images/example_case.nii.gz"
+    "data/test/first_children/531960/SUV.nii.gz"
 
 output:
   dir: outputs/inference
@@ -8,7 +8,7 @@ output:
   preview_gif_duration_ms: 80
 
 checkpoint:
-  path: checkpoints/best_model.pth
+  path: checkpoints/exp_unet3d_free_data_lymphoma_HD95_AVD_holdout_20260328_203311/best_model.pth
 
 sliding_window:
   patch_size: [96, 96, 96]

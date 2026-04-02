@@ -119,12 +119,21 @@ def preprocess_case(img_path, mask_path, out_img, out_mask):
     save(img, affine, out_img)
     save(mask, affine, out_mask)
 
+def _is_valid_output_pair(out_img, out_mask):
+    return (
+        os.path.isfile(out_img)
+        and os.path.isfile(out_mask)
+        and os.path.getsize(out_img) > 0
+        and os.path.getsize(out_mask) > 0
+    )
 
-def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir):
+def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
     os.makedirs(out_img_dir, exist_ok=True)
     os.makedirs(out_mask_dir, exist_ok=True)
 
     images = sorted(os.listdir(img_dir))
+    processed = 0
+    skipped = 0
 
     for name in tqdm(images):
         img_path = os.path.join(img_dir, name)
@@ -135,7 +144,16 @@ def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir):
             out_mask_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}")
         )
 
+        if not force and _is_valid_output_pair(out_img, out_mask):
+            skipped += 1
+            continue
+
         preprocess_case(img_path, mask_path, out_img, out_mask)
+        processed += 1
+
+    print(
+        f"nifti2npy completed: processed={processed}, skipped={skipped}, force={force}"
+    )
 
 
 if __name__ == "__main__":
@@ -144,4 +162,5 @@ if __name__ == "__main__":
         mask_dir="data/raw/masks",
         out_img_dir="data/processed/images",
         out_mask_dir="data/processed/masks",
+        force=False
     )

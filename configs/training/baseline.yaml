@@ -1,6 +1,6 @@
 device: cuda
 epochs: 10
-batch_size: 1
+batch_size: 4
 num_workers: 4
 lr: 1e-4
 split_strategy: holdout
@@ -11,6 +11,6 @@ num_folds: 5
 run_all_folds: false
 fold_index: 0
 save_best: true
-monitor_metric: val/dice_epoch
+monitor_metric: val/loss_epoch # loss_epoch, dice_epoch, hd95_epoch, avd_ml_epoch, ravd_percent_epoch
 checkpoint_dir: checkpoints
 # class_weights: [0.2, 0.8]

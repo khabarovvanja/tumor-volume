@@ -136,6 +136,7 @@ def _render_preview_gif(
     output_path: Path,
     duration_ms: int,
 ) -> None:
+    target_height, target_width = image.shape[1], image.shape[2]
     image = image.astype(np.float32)
     image_min = float(np.min(image))
     image_max = float(np.max(image))
@@ -145,16 +146,33 @@ def _render_preview_gif(
         image_scaled = ((image - image_min) / (image_max - image_min) * 255.0).astype(
             np.uint8
         )
+    image_scaled = 255 - image_scaled
 
     frames = []
     for slice_idx in range(image_scaled.shape[0]):
-        frame = np.stack([image_scaled[slice_idx]] * 3, axis=-1)
-        mask_slice = mask[slice_idx] > 0
+        rotated_image = np.rot90(image_scaled[slice_idx], k=1)
+        rotated_mask = np.rot90(mask[slice_idx] > 0, k=1)
+
+        frame_image = Image.fromarray(rotated_image).resize(
+            (target_width, target_height),
+            resample=Image.Resampling.BILINEAR,
+        )
+        mask_image = Image.fromarray(rotated_mask.astype(np.uint8) * 255).resize(
+            (target_width, target_height),
+            resample=Image.Resampling.NEAREST,
+        )
+
+        frame = np.stack([np.asarray(frame_image)] * 3, axis=-1)
+        mask_slice = np.asarray(mask_image) > 0
 
         if mask_slice.any():
             overlay = frame.copy()
             overlay[mask_slice] = np.array([255, 0, 0], dtype=np.uint8)
-            frame = np.where(mask_slice[..., None], (0.45 * frame + 0.55 * overlay), frame)
+            frame = np.where(
+                mask_slice[..., None],
+                (0.45 * frame + 0.55 * overlay),
+                frame,
+            )
             frame = frame.astype(np.uint8)
 
         frames.append(Image.fromarray(frame))

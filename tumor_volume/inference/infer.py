@@ -4,6 +4,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 import torch
+from nibabel.processing import resample_from_to
 from omegaconf import DictConfig
 from PIL import Image
 
@@ -55,27 +56,20 @@ def _prepare_nifti_for_inference(pet_path: Path, ct_path: Path):
     original_pet_nii = nib.load(str(pet_path))
     original_ct_nii = nib.load(str(ct_path))
     original_pet_data = original_pet_nii.get_fdata().astype(np.float32)
-    original_ct_data = original_ct_nii.get_fdata().astype(np.float32)
-
-    if original_pet_data.shape != original_ct_data.shape:
-        raise ValueError(
-            "PET and CT inputs must have identical shapes. "
-            f"Got PET={original_pet_data.shape}, CT={original_ct_data.shape}"
-        )
 
     original_spacing = tuple(float(s) for s in original_pet_nii.header.get_zooms()[:3])
 
     canonical_pet_nii = nib.as_closest_canonical(original_pet_nii)
     canonical_ct_nii = nib.as_closest_canonical(original_ct_nii)
     canonical_pet_data = canonical_pet_nii.get_fdata().astype(np.float32)
-    canonical_ct_data = canonical_ct_nii.get_fdata().astype(np.float32)
     canonical_spacing = tuple(float(s) for s in canonical_pet_nii.header.get_zooms()[:3])
 
-    if canonical_pet_data.shape != canonical_ct_data.shape:
-        raise ValueError(
-            "Canonical PET and CT inputs must have identical shapes. "
-            f"Got PET={canonical_pet_data.shape}, CT={canonical_ct_data.shape}"
-        )
+    canonical_ct_in_pet_space = resample_from_to(
+        canonical_ct_nii,
+        (canonical_pet_nii.shape, canonical_pet_nii.affine),
+        order=1,
+    )
+    canonical_ct_data = canonical_ct_in_pet_space.get_fdata().astype(np.float32)
 
     original_ornt = nib.orientations.io_orientation(original_pet_nii.affine)
     canonical_ornt = nib.orientations.io_orientation(canonical_pet_nii.affine)

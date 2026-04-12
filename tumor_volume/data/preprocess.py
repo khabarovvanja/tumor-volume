@@ -3,6 +3,7 @@ import os
 import nibabel as nib
 import numpy as np
 import SimpleITK as sitk
+from nibabel.processing import resample_from_to
 from tqdm import tqdm
 
 TARGET_SPACING = (2.0, 2.0, 2.0)
@@ -128,23 +129,33 @@ def preprocess_multimodal_case(
     out_ct,
     out_mask,
 ):
-    pet, pet_spacing, pet_affine = load_nii(pet_path)
-    ct, ct_spacing, _ = load_nii(ct_path)
-    mask, _, _ = load_nii(mask_path)
+    pet_nii = nib.as_closest_canonical(nib.load(str(pet_path)))
+    ct_nii = nib.as_closest_canonical(nib.load(str(ct_path)))
+    mask_nii = nib.as_closest_canonical(nib.load(str(mask_path)))
 
-    if pet.shape != ct.shape or pet.shape != mask.shape:
+    pet = pet_nii.get_fdata().astype(np.float32)
+    mask = (mask_nii.get_fdata() > 0).astype(np.uint8)
+    pet_spacing = tuple(float(s) for s in pet_nii.header.get_zooms()[:3])
+    pet_affine = pet_nii.affine
+
+    if pet.shape != mask.shape:
         raise ValueError(
-            "PET, CT and mask must have identical shapes before preprocessing. "
-            f"Got PET={pet.shape}, CT={ct.shape}, mask={mask.shape}"
+            "PET and mask must have identical shapes before preprocessing. "
+            f"Got PET={pet.shape}, mask={mask.shape}"
         )
 
-    mask = (mask > 0).astype(np.uint8)
+    ct_in_pet_space = resample_from_to(
+        ct_nii,
+        (pet_nii.shape, pet_nii.affine),
+        order=1,
+    )
+    ct = ct_in_pet_space.get_fdata().astype(np.float32)
 
     pet = resample(pet, pet_spacing, TARGET_SPACING, is_mask=False)
     target_shape = pet.shape
     ct = resample_to_spacing(
         ct,
-        input_spacing=ct_spacing,
+        input_spacing=pet_spacing,
         output_spacing=TARGET_SPACING,
         is_mask=False,
         output_shape=target_shape,

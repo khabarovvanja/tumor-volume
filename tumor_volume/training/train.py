@@ -10,7 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from tumor_volume.data.dataset import PETPatchDataset, list_case_files, load_volume
+from tumor_volume.data.dataset import PETCTPatchDataset, list_case_triplets, load_volume
 from tumor_volume.data.dvc_utils import download_data
 from tumor_volume.data.preprocess import TARGET_SPACING, nifti2npy
 from tumor_volume.inference.postprocess import logits_to_mask
@@ -28,7 +28,7 @@ from tumor_volume.utils.logging import setup_mlflow
 
 def run_training(cfg: DictConfig) -> None:
     _prepare_data(cfg)
-    all_cases = list_case_files(cfg.data.images_dir, cfg.data.masks_dir)
+    all_cases = list_case_triplets(cfg.data.pet_dir, cfg.data.ct_dir, cfg.data.masks_dir)
     split_plan = build_split_plan(all_cases, cfg)
 
     fold_summaries = []
@@ -78,15 +78,23 @@ def run_training(cfg: DictConfig) -> None:
 def _prepare_data(cfg: DictConfig) -> None:
     download_data(cfg.data)
 
-    img_dir = f"{cfg.data.root_dir}/raw/images"
+    pet_dir = f"{cfg.data.root_dir}/raw/pet"
+    ct_dir = f"{cfg.data.root_dir}/raw/ct"
     mask_dir = f"{cfg.data.root_dir}/raw/masks"
-    out_img_dir = f"{cfg.data.root_dir}/processed/images"
+    out_pet_dir = f"{cfg.data.root_dir}/processed/pet"
+    out_ct_dir = f"{cfg.data.root_dir}/processed/ct"
     out_mask_dir = f"{cfg.data.root_dir}/processed/masks"
 
-    if not Path(out_img_dir).exists() or not any(Path(out_img_dir).iterdir()):
-        print("Converting NIfTI to NumPy...")
-        nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
-        print("Done.")
+    print("Converting multimodal NIfTI to NumPy (incremental)...")
+    nifti2npy(
+        pet_dir=pet_dir,
+        ct_dir=ct_dir,
+        mask_dir=mask_dir,
+        out_pet_dir=out_pet_dir,
+        out_ct_dir=out_ct_dir,
+        out_mask_dir=out_mask_dir,
+        force=False,
+    )
 
 
 def _case_id_from_path(path: Path) -> str:
@@ -100,14 +108,14 @@ def _case_id_from_path(path: Path) -> str:
 def _save_split_manifest(split: dict[str, object], output_path: Path) -> None:
     manifest = {"split_name": split["name"]}
     for key in ("train", "val", "test"):
-        manifest[key] = [_case_id_from_path(image_path) for image_path, _ in split[key]]
+        manifest[key] = [_case_id_from_path(case[0]) for case in split[key]]
 
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(manifest, file, indent=2, ensure_ascii=False)
 
 
 def build_split_plan(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, Path, Path]],
     cfg: DictConfig,
 ) -> list[dict[str, object]]:
     if cfg.training.split_strategy == "kfold":
@@ -116,7 +124,7 @@ def build_split_plan(
 
 
 def _build_holdout_split(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, Path, Path]],
     cfg: DictConfig,
 ) -> dict[str, object]:
     train_ratio = float(cfg.training.train_split)
@@ -158,7 +166,7 @@ def _build_holdout_split(
 
 
 def _build_kfold_plan(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, Path, Path]],
     cfg: DictConfig,
 ) -> list[dict[str, object]]:
     num_folds = int(cfg.training.num_folds)
@@ -217,7 +225,7 @@ def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, 
     dice_loss = DiceLoss()
     ce_loss = torch.nn.CrossEntropyLoss()
 
-    train_dataset = PETPatchDataset(
+    train_dataset = PETCTPatchDataset(
         patch_size=tuple(cfg.data.patch_size),
         samples_per_volume=cfg.data.samples_per_volume,
         cases=split["train"],
@@ -377,7 +385,7 @@ def _run_train_epoch(
 @torch.no_grad()
 def evaluate_cases(
     model,
-    cases: list[tuple[Path, Path]],
+    cases: list[tuple[Path, Path, Path]],
     cfg: DictConfig,
     dice_loss,
     ce_loss,
@@ -393,10 +401,13 @@ def evaluate_cases(
     avd_scores = []
     ravd_scores = []
 
-    for image_path, mask_path in tqdm(cases, desc=desc):
-        volume = load_volume(image_path).astype(np.float32)
+    for pet_path, ct_path, mask_path in tqdm(cases, desc=desc):
+        pet = load_volume(pet_path).astype(np.float32)
+        ct = load_volume(ct_path).astype(np.float32)
         mask = load_volume(mask_path).astype(np.int64)
-        volume = (volume - volume.mean()) / (volume.std() + 1e-6)
+        pet = (pet - pet.mean()) / (pet.std() + 1e-6)
+        ct = (ct - ct.mean()) / (ct.std() + 1e-6)
+        volume = np.stack([pet, ct], axis=0)
 
         logits = sliding_window_inference(
             volume=volume,

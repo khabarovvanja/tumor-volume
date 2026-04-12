@@ -119,6 +119,54 @@ def preprocess_case(img_path, mask_path, out_img, out_mask):
     save(img, affine, out_img)
     save(mask, affine, out_mask)
 
+
+def preprocess_multimodal_case(
+    pet_path,
+    ct_path,
+    mask_path,
+    out_pet,
+    out_ct,
+    out_mask,
+):
+    pet, pet_spacing, pet_affine = load_nii(pet_path)
+    ct, ct_spacing, _ = load_nii(ct_path)
+    mask, _, _ = load_nii(mask_path)
+
+    if pet.shape != ct.shape or pet.shape != mask.shape:
+        raise ValueError(
+            "PET, CT and mask must have identical shapes before preprocessing. "
+            f"Got PET={pet.shape}, CT={ct.shape}, mask={mask.shape}"
+        )
+
+    mask = (mask > 0).astype(np.uint8)
+
+    pet = resample(pet, pet_spacing, TARGET_SPACING, is_mask=False)
+    target_shape = pet.shape
+    ct = resample_to_spacing(
+        ct,
+        input_spacing=ct_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=False,
+        output_shape=target_shape,
+    )
+    mask = resample_to_spacing(
+        mask,
+        input_spacing=pet_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=True,
+        output_shape=target_shape,
+    )
+
+    bbox = compute_nonzero_bbox(pet)
+    pet = crop_to_bbox(pet, bbox)
+    ct = crop_to_bbox(ct, bbox)
+    mask = crop_to_bbox(mask, bbox)
+
+    save(pet, pet_affine, out_pet)
+    save(ct, pet_affine, out_ct)
+    save(mask, pet_affine, out_mask)
+
+
 def _is_valid_output_pair(out_img, out_mask):
     return (
         os.path.isfile(out_img)
@@ -127,28 +175,64 @@ def _is_valid_output_pair(out_img, out_mask):
         and os.path.getsize(out_mask) > 0
     )
 
-def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
-    os.makedirs(out_img_dir, exist_ok=True)
+def _is_valid_output_triplet(out_pet, out_ct, out_mask):
+    return (
+        os.path.isfile(out_pet)
+        and os.path.isfile(out_ct)
+        and os.path.isfile(out_mask)
+        and os.path.getsize(out_pet) > 0
+        and os.path.getsize(out_ct) > 0
+        and os.path.getsize(out_mask) > 0
+    )
+
+
+def nifti2npy(
+    pet_dir,
+    ct_dir,
+    mask_dir,
+    out_pet_dir,
+    out_ct_dir,
+    out_mask_dir,
+    force=False,
+):
+    os.makedirs(out_pet_dir, exist_ok=True)
+    os.makedirs(out_ct_dir, exist_ok=True)
     os.makedirs(out_mask_dir, exist_ok=True)
 
-    images = sorted(os.listdir(img_dir))
+    pet_files = sorted(os.listdir(pet_dir))
     processed = 0
     skipped = 0
 
-    for name in tqdm(images):
-        img_path = os.path.join(img_dir, name)
+    for name in tqdm(pet_files):
+        pet_path = os.path.join(pet_dir, name)
+        ct_path = os.path.join(ct_dir, name)
         mask_path = os.path.join(mask_dir, name)
 
-        out_img = os.path.join(out_img_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
+        if not os.path.isfile(ct_path):
+            raise FileNotFoundError(f"Missing CT file for case '{name}' in '{ct_dir}'")
+        if not os.path.isfile(mask_path):
+            raise FileNotFoundError(
+                f"Missing mask file for case '{name}' in '{mask_dir}'"
+            )
+
+        out_pet = os.path.join(out_pet_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
+        out_ct = os.path.join(out_ct_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
         out_mask = os.path.join(
             out_mask_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}")
         )
 
-        if not force and _is_valid_output_pair(out_img, out_mask):
+        if not force and _is_valid_output_triplet(out_pet, out_ct, out_mask):
             skipped += 1
             continue
 
-        preprocess_case(img_path, mask_path, out_img, out_mask)
+        preprocess_multimodal_case(
+            pet_path,
+            ct_path,
+            mask_path,
+            out_pet,
+            out_ct,
+            out_mask,
+        )
         processed += 1
 
     print(
@@ -158,9 +242,11 @@ def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
 
 if __name__ == "__main__":
     nifti2npy(
-        img_dir="data/raw/images",
+        pet_dir="data/raw/pet",
+        ct_dir="data/raw/ct",
         mask_dir="data/raw/masks",
-        out_img_dir="data/processed/images",
+        out_pet_dir="data/processed/pet",
+        out_ct_dir="data/processed/ct",
         out_mask_dir="data/processed/masks",
-        force=False
+        force=False,
     )

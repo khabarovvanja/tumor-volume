@@ -25,7 +25,14 @@ def sliding_window_inference(
     model.eval()
 
     C = model.out.out_channels  # num_classes
-    orig_d, orig_h, orig_w = volume.shape
+    if volume.ndim == 3:
+        volume = volume[None, ...]
+    elif volume.ndim != 4:
+        raise ValueError(
+            "Volume for sliding window inference must have shape [D,H,W] or [C,D,H,W]."
+        )
+
+    in_channels, orig_d, orig_h, orig_w = volume.shape
     pd, ph, pw = patch_size
 
     pad_d = max(pd - orig_d, 0)
@@ -34,11 +41,11 @@ def sliding_window_inference(
     if pad_d or pad_h or pad_w:
         volume = np.pad(
             volume,
-            ((0, pad_d), (0, pad_h), (0, pad_w)),
+            ((0, 0), (0, pad_d), (0, pad_h), (0, pad_w)),
             mode="constant",
         )
 
-    D, H, W = volume.shape
+    _, D, H, W = volume.shape
 
     stride = (
         max(int(pd * (1 - overlap)), 1),
@@ -58,7 +65,10 @@ def sliding_window_inference(
     for z in z_starts:
         for y in y_starts:
             for x in x_starts:
-                patch = volume[z : z + pd, y : y + ph, x : x + pw]
+                if in_channels > 1:
+                    patch = volume[:, z : z + pd, y : y + ph, x : x + pw]
+                else:
+                    patch = volume[0, z : z + pd, y : y + ph, x : x + pw]
                 patches.append(patch)
                 coords.append((z, y, x))
 
@@ -74,7 +84,10 @@ def sliding_window_inference(
 
 
 def _run_batch(patches, coords, logits_sum, count_map, model, device):
-    x = torch.from_numpy(np.stack(patches)).unsqueeze(1).float().to(device)
+    x = torch.from_numpy(np.stack(patches)).float()
+    if x.dim() == 4:
+        x = x.unsqueeze(1)
+    x = x.to(device)
     out = model(x).cpu().numpy()
 
     for i, (z, y, x0) in enumerate(coords):

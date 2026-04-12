@@ -51,44 +51,74 @@ def _normalize_volume(volume: np.ndarray) -> np.ndarray:
     return (volume - volume.mean()) / (volume.std() + 1e-6)
 
 
-def _prepare_nifti_for_inference(input_path: Path):
-    original_nii = nib.load(str(input_path))
-    original_data = original_nii.get_fdata().astype(np.float32)
-    original_spacing = tuple(float(s) for s in original_nii.header.get_zooms()[:3])
+def _prepare_nifti_for_inference(pet_path: Path, ct_path: Path):
+    original_pet_nii = nib.load(str(pet_path))
+    original_ct_nii = nib.load(str(ct_path))
+    original_pet_data = original_pet_nii.get_fdata().astype(np.float32)
+    original_ct_data = original_ct_nii.get_fdata().astype(np.float32)
 
-    canonical_nii = nib.as_closest_canonical(original_nii)
-    canonical_data = canonical_nii.get_fdata().astype(np.float32)
-    canonical_spacing = tuple(float(s) for s in canonical_nii.header.get_zooms()[:3])
+    if original_pet_data.shape != original_ct_data.shape:
+        raise ValueError(
+            "PET and CT inputs must have identical shapes. "
+            f"Got PET={original_pet_data.shape}, CT={original_ct_data.shape}"
+        )
 
-    original_ornt = nib.orientations.io_orientation(original_nii.affine)
-    canonical_ornt = nib.orientations.io_orientation(canonical_nii.affine)
+    original_spacing = tuple(float(s) for s in original_pet_nii.header.get_zooms()[:3])
+
+    canonical_pet_nii = nib.as_closest_canonical(original_pet_nii)
+    canonical_ct_nii = nib.as_closest_canonical(original_ct_nii)
+    canonical_pet_data = canonical_pet_nii.get_fdata().astype(np.float32)
+    canonical_ct_data = canonical_ct_nii.get_fdata().astype(np.float32)
+    canonical_spacing = tuple(float(s) for s in canonical_pet_nii.header.get_zooms()[:3])
+
+    if canonical_pet_data.shape != canonical_ct_data.shape:
+        raise ValueError(
+            "Canonical PET and CT inputs must have identical shapes. "
+            f"Got PET={canonical_pet_data.shape}, CT={canonical_ct_data.shape}"
+        )
+
+    original_ornt = nib.orientations.io_orientation(original_pet_nii.affine)
+    canonical_ornt = nib.orientations.io_orientation(canonical_pet_nii.affine)
     canonical_to_original = nib.orientations.ornt_transform(
         canonical_ornt,
         original_ornt,
     )
 
-    resampled = resample_to_spacing(
-        volume=canonical_data,
+    pet_resampled = resample_to_spacing(
+        volume=canonical_pet_data,
         input_spacing=canonical_spacing,
         output_spacing=TARGET_SPACING,
         is_mask=False,
     ).astype(np.float32)
-    crop_bbox = compute_nonzero_bbox(resampled)
-    processed = crop_to_bbox(resampled, crop_bbox).astype(np.float32)
+    ct_resampled = resample_to_spacing(
+        volume=canonical_ct_data,
+        input_spacing=canonical_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=False,
+        output_shape=pet_resampled.shape,
+    ).astype(np.float32)
+    crop_bbox = compute_nonzero_bbox(pet_resampled)
+    pet_processed = crop_to_bbox(pet_resampled, crop_bbox).astype(np.float32)
+    ct_processed = crop_to_bbox(ct_resampled, crop_bbox).astype(np.float32)
 
     metadata = {
-        "input_path": str(input_path),
-        "original_nii": original_nii,
-        "original_data": original_data,
-        "original_shape": tuple(int(v) for v in original_data.shape),
+        "pet_path": str(pet_path),
+        "ct_path": str(ct_path),
+        "original_pet_nii": original_pet_nii,
+        "original_ct_nii": original_ct_nii,
+        "original_pet_data": original_pet_data,
+        "original_shape": tuple(int(v) for v in original_pet_data.shape),
         "original_spacing": original_spacing,
-        "canonical_shape": tuple(int(v) for v in canonical_data.shape),
+        "canonical_shape": tuple(int(v) for v in canonical_pet_data.shape),
         "canonical_spacing": canonical_spacing,
-        "resampled_shape": tuple(int(v) for v in resampled.shape),
+        "resampled_shape": tuple(int(v) for v in pet_resampled.shape),
         "crop_bbox": crop_bbox,
         "canonical_to_original": canonical_to_original,
     }
-    return _normalize_volume(processed), metadata
+    return np.stack(
+        [_normalize_volume(pet_processed), _normalize_volume(ct_processed)],
+        axis=0,
+    ), metadata
 
 
 def _restore_mask_to_original_space(mask: np.ndarray, metadata: dict) -> np.ndarray:
@@ -115,16 +145,18 @@ def _restore_mask_to_original_space(mask: np.ndarray, metadata: dict) -> np.ndar
 
 
 def _save_nifti_outputs(output_dir: Path, metadata: dict, original_mask: np.ndarray) -> None:
-    image_output_path = output_dir / "image.nii.gz"
+    pet_output_path = output_dir / "pet.nii.gz"
+    ct_output_path = output_dir / "ct.nii.gz"
     mask_output_path = output_dir / "mask.nii.gz"
 
-    nib.save(metadata["original_nii"], str(image_output_path))
+    nib.save(metadata["original_pet_nii"], str(pet_output_path))
+    nib.save(metadata["original_ct_nii"], str(ct_output_path))
 
-    mask_header = metadata["original_nii"].header.copy()
+    mask_header = metadata["original_pet_nii"].header.copy()
     mask_header.set_data_dtype(np.uint8)
     mask_nii = nib.Nifti1Image(
         original_mask.astype(np.uint8),
-        metadata["original_nii"].affine,
+        metadata["original_pet_nii"].affine,
         mask_header,
     )
     nib.save(mask_nii, str(mask_output_path))
@@ -191,13 +223,15 @@ def _render_preview_gif(
 
 def _run_npy_inference(
     cfg: DictConfig,
-    input_path: Path,
+    pet_path: Path,
+    ct_path: Path,
     output_dir: Path,
     model,
     checkpoint_path: Path,
 ) -> None:
-    volume = np.load(input_path).astype(np.float32)
-    volume = _normalize_volume(volume)
+    pet = _normalize_volume(np.load(pet_path).astype(np.float32))
+    ct = _normalize_volume(np.load(ct_path).astype(np.float32))
+    volume = np.stack([pet, ct], axis=0)
 
     logits = sliding_window_inference(
         volume=volume,
@@ -215,7 +249,8 @@ def _run_npy_inference(
     with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(
             {
-                "input_path": str(input_path),
+                "input_pet_path": str(pet_path),
+                "input_ct_path": str(ct_path),
                 "checkpoint_path": str(checkpoint_path),
                 "tumor_volume_ml": float(tumor_volume_ml),
                 "output_mask_path": str(output_dir / "mask.npy"),
@@ -226,13 +261,14 @@ def _run_npy_inference(
 
 
 def run_inference(cfg: DictConfig):
-    input_path = Path(cfg.inference.input.volume)
-    filename = _case_name(input_path)
+    pet_path = Path(cfg.inference.input.pet)
+    ct_path = Path(cfg.inference.input.ct)
+    filename = _case_name(pet_path)
     output_dir = Path(cfg.inference.output.dir) / filename
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model = UNet3D(
-        in_channels=1,
+        in_channels=cfg.model.in_channels,
         num_classes=cfg.inference.num_classes,
     )
 
@@ -242,15 +278,18 @@ def run_inference(cfg: DictConfig):
     model.to(cfg.inference.device)
     model.eval()
 
-    if input_path.suffix == ".npy":
-        _run_npy_inference(cfg, input_path, output_dir, model, checkpoint_path)
+    if pet_path.suffix == ".npy" and ct_path.suffix == ".npy":
+        _run_npy_inference(cfg, pet_path, ct_path, output_dir, model, checkpoint_path)
         print(f"Tumor volume saved to {output_dir / 'metrics.json'}")
         return
 
-    if not (input_path.name.endswith(".nii.gz") or input_path.suffix == ".nii"):
-        raise ValueError("Inference input must be a .nii.gz, .nii, or .npy file.")
+    if not (
+        (pet_path.name.endswith(".nii.gz") or pet_path.suffix == ".nii")
+        and (ct_path.name.endswith(".nii.gz") or ct_path.suffix == ".nii")
+    ):
+        raise ValueError("Inference inputs must both be .nii.gz/.nii or both be .npy files.")
 
-    volume, metadata = _prepare_nifti_for_inference(input_path)
+    volume, metadata = _prepare_nifti_for_inference(pet_path, ct_path)
     logits = sliding_window_inference(
         volume=volume,
         model=model,
@@ -272,7 +311,7 @@ def run_inference(cfg: DictConfig):
     _save_nifti_outputs(output_dir, metadata, original_mask)
     if cfg.inference.output.save_preview_gif:
         _render_preview_gif(
-            image=metadata["original_data"],
+            image=metadata["original_pet_data"],
             mask=original_mask,
             output_path=output_dir / "preview.gif",
             duration_ms=cfg.inference.output.preview_gif_duration_ms,
@@ -281,10 +320,12 @@ def run_inference(cfg: DictConfig):
     with open(output_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(
             {
-                "input_path": str(input_path),
+                "input_pet_path": str(pet_path),
+                "input_ct_path": str(ct_path),
                 "checkpoint_path": str(checkpoint_path),
                 "tumor_volume_ml": float(tumor_volume_ml),
-                "input_image_path": str(output_dir / "image.nii.gz"),
+                "output_pet_path": str(output_dir / "pet.nii.gz"),
+                "output_ct_path": str(output_dir / "ct.nii.gz"),
                 "output_mask_path": str(output_dir / "mask.nii.gz"),
                 "preview_gif_path": (
                     str(output_dir / "preview.gif")

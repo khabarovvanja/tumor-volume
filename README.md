@@ -108,10 +108,11 @@ You can start training with custom settings also:
 
 ## Inference
 
-After training process you can run predict of the new data (converted to .npy
-format):
+After training process you can run predict of the new paired PET/CT data:
 
-    poetry run python -m tumor_volume.commands infer inference.input.volume=path/to/file.npy
+    poetry run python -m tumor_volume.commands infer \
+      inference.input.pet=path/to/pet.nii.gz \
+      inference.input.ct=path/to/ct.nii.gz
 
 ...predicted mask and tumor volume will save to the directory
 `outputs/inference/<filename>`.

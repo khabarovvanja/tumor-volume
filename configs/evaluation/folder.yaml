@@ -1,0 +1,3 @@
+output_dir: outputs/evaluation
+run_name: folder_eval
+progress_desc: Evaluation

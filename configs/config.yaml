@@ -1,5 +1,6 @@
 defaults:
   - data: pet
+  - evaluation: folder
   - inference: sliding_window
   - model: unet3d
   - training: baseline

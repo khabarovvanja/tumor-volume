@@ -2,6 +2,7 @@ import fire
 import hydra
 from hydra.core.global_hydra import GlobalHydra
 
+from tumor_volume.evaluation.evaluate import run_evaluation
 from tumor_volume.inference.infer import run_inference
 from tumor_volume.training.train import run_training
 
@@ -35,11 +36,17 @@ def infer(*overrides: str):
     run_inference(cfg)
 
 
+def evaluate(*overrides: str):
+    cfg = _compose_cfg(overrides)
+    run_evaluation(cfg)
+
+
 def main():
     fire.Fire(
         {
             "train": train,
             "infer": infer,
+            "evaluate": evaluate,
         }
     )
 

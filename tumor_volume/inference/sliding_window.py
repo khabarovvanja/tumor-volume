@@ -24,6 +24,7 @@ def sliding_window_inference(
 ):
     model.eval()
 
+    device = torch.device(device)
     C = model.out.out_channels  # num_classes
     if volume.ndim == 3:
         volume = volume[None, ...]
@@ -32,6 +33,7 @@ def sliding_window_inference(
             "Volume for sliding window inference must have shape [D,H,W] or [C,D,H,W]."
         )
 
+    volume = torch.from_numpy(volume).float()
     in_channels, orig_d, orig_h, orig_w = volume.shape
     pd, ph, pw = patch_size
 
@@ -39,13 +41,15 @@ def sliding_window_inference(
     pad_h = max(ph - orig_h, 0)
     pad_w = max(pw - orig_w, 0)
     if pad_d or pad_h or pad_w:
-        volume = np.pad(
+        volume = torch.nn.functional.pad(
             volume,
-            ((0, 0), (0, pad_d), (0, pad_h), (0, pad_w)),
+            (0, pad_w, 0, pad_h, 0, pad_d),
             mode="constant",
+            value=0.0,
         )
 
     _, D, H, W = volume.shape
+    volume = volume.to(device, non_blocking=True)
 
     stride = (
         max(int(pd * (1 - overlap)), 1),
@@ -53,8 +57,8 @@ def sliding_window_inference(
         max(int(pw * (1 - overlap)), 1),
     )
 
-    logits_sum = np.zeros((C, D, H, W), dtype=np.float32)
-    count_map = np.zeros((D, H, W), dtype=np.float32)
+    logits_sum = torch.zeros((C, D, H, W), dtype=torch.float32, device=device)
+    count_map = torch.zeros((D, H, W), dtype=torch.float32, device=device)
 
     patches, coords = [], []
 
@@ -79,16 +83,16 @@ def sliding_window_inference(
     if patches:
         _run_batch(patches, coords, logits_sum, count_map, model, device)
 
-    logits = logits_sum / np.clip(count_map[None], 1e-6, None)
-    return logits[:, :orig_d, :orig_h, :orig_w]
+    logits = logits_sum / torch.clamp(count_map.unsqueeze(0), min=1e-6)
+    logits = logits[:, :orig_d, :orig_h, :orig_w]
+    return logits.cpu().numpy()
 
 
 def _run_batch(patches, coords, logits_sum, count_map, model, device):
-    x = torch.from_numpy(np.stack(patches)).float()
+    x = torch.stack(patches)
     if x.dim() == 4:
         x = x.unsqueeze(1)
-    x = x.to(device)
-    out = model(x).cpu().numpy()
+    out = model(x)
 
     for i, (z, y, x0) in enumerate(coords):
         pd, ph, pw = out.shape[2:]

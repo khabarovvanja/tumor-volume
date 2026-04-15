@@ -12,6 +12,11 @@ from tumor_volume.training.train import evaluate_cases
 
 
 def run_evaluation(cfg: DictConfig) -> None:
+    if cfg.evaluation.override_overlap is not None:
+        cfg.inference.sliding_window.overlap = cfg.evaluation.override_overlap
+    if cfg.evaluation.override_batch_size is not None:
+        cfg.inference.sliding_window.batch_size = cfg.evaluation.override_batch_size
+
     cases = list_case_triplets(
         cfg.data.pet_dir,
         cfg.data.ct_dir,
@@ -50,6 +55,9 @@ def run_evaluation(cfg: DictConfig) -> None:
         "ct_dir": str(cfg.data.ct_dir),
         "masks_dir": str(cfg.data.masks_dir),
         "num_cases": len(cases),
+        "compute_hd95": bool(cfg.evaluation.compute_hd95),
+        "effective_overlap": float(cfg.inference.sliding_window.overlap),
+        "effective_batch_size": int(cfg.inference.sliding_window.batch_size),
         "metrics": {
             "loss": float(metrics["loss"]),
             "dice": float(metrics["dice"]),

@@ -392,6 +392,7 @@ def evaluate_cases(
     desc: str,
 ):
     model.eval()
+    compute_hd95 = getattr(cfg.evaluation, "compute_hd95", True)
 
     losses = []
     dice_losses = []
@@ -427,9 +428,12 @@ def evaluate_cases(
 
         prediction = logits_to_mask(logits_tensor)
         dice_scores.append(dice_coefficient(prediction, mask))
-        hd95_value = hd95(prediction, mask, TARGET_SPACING)
-        if not np.isfinite(hd95_value):
-            hd95_value = float(np.linalg.norm(np.multiply(mask.shape, TARGET_SPACING)))
+        if compute_hd95:
+            hd95_value = hd95(prediction, mask, TARGET_SPACING)
+            if not np.isfinite(hd95_value):
+                hd95_value = float(np.linalg.norm(np.multiply(mask.shape, TARGET_SPACING)))
+        else:
+            hd95_value = float("nan")
         hd95_scores.append(hd95_value)
         avd_scores.append(
             absolute_volume_difference(prediction, mask, TARGET_SPACING)
@@ -444,7 +448,7 @@ def evaluate_cases(
     return {
         "loss": float(np.mean(losses)),
         "dice": float(np.mean(dice_scores)),
-        "hd95": float(np.mean(hd95_scores)),
+        "hd95": float(np.nanmean(hd95_scores)) if compute_hd95 else float("nan"),
         "avd_ml": float(np.mean(avd_scores)),
         "ravd_percent": float(np.mean(ravd_scores)),
         "dice_loss": float(np.mean(dice_losses)),

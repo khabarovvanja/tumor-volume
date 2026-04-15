@@ -1,0 +1,6 @@
+output_dir: outputs/evaluation
+run_name: folder_eval_fast
+progress_desc: Fast evaluation
+compute_hd95: false
+override_overlap: 0.25
+override_batch_size: 8

@@ -1,0 +1,6 @@
+output_dir: outputs/evaluation
+run_name: folder_eval_full
+progress_desc: Full evaluation
+compute_hd95: true
+override_overlap: 0.5
+override_batch_size: null

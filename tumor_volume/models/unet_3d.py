@@ -21,6 +21,7 @@ class ConvBlock(nn.Module):
 class UNet3D(nn.Module):
     def __init__(self, in_channels: int, num_classes: int):
         super().__init__()
+        self.num_classes = num_classes
 
         self.enc1 = ConvBlock(in_channels, 32)
         self.enc2 = ConvBlock(32, 64)

@@ -22,7 +22,7 @@ from tumor_volume.models.metrics import (
     hd95,
     relative_absolute_volume_difference,
 )
-from tumor_volume.models.unet_3d import UNet3D
+from tumor_volume.models.factory import build_model
 from tumor_volume.utils.logging import setup_mlflow
 
 
@@ -209,10 +209,7 @@ def _build_kfold_plan(
 
 
 def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, float]:
-    model = UNet3D(
-        in_channels=cfg.model.in_channels,
-        num_classes=cfg.model.num_classes,
-    ).to(cfg.training.device)
+    model = build_model(cfg.model).to(cfg.training.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.training.lr)
     dice_loss = DiceLoss()
     ce_loss = torch.nn.CrossEntropyLoss()

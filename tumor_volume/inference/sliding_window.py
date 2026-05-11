@@ -24,7 +24,10 @@ def sliding_window_inference(
 ):
     model.eval()
 
-    C = model.out.out_channels  # num_classes
+    if hasattr(model, "num_classes"):
+        C = model.num_classes
+    else:
+        C = model.out.out_channels
     orig_d, orig_h, orig_w = volume.shape
     pd, ph, pw = patch_size
 

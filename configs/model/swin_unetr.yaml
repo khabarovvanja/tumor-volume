@@ -1,0 +1,12 @@
+architecture: swin_unetr
+in_channels: 1
+num_classes: 2
+img_size: [96, 96, 96]
+feature_size: 24
+depths: [2, 2, 2, 2]
+num_heads: [3, 6, 12, 24]
+drop_rate: 0.0
+attn_drop_rate: 0.0
+dropout_path_rate: 0.0
+use_checkpoint: true
+use_v2: false

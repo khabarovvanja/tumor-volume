@@ -17,7 +17,7 @@ from tumor_volume.data.preprocess import (
 from tumor_volume.inference.postprocess import logits_to_mask
 from tumor_volume.inference.sliding_window import sliding_window_inference
 from tumor_volume.inference.volume import compute_tumor_volume
-from tumor_volume.models.unet_3d import UNet3D
+from tumor_volume.models.factory import build_model
 
 
 def _resolve_checkpoint_path(checkpoint_path: str) -> Path:
@@ -231,10 +231,7 @@ def run_inference(cfg: DictConfig):
     output_dir = Path(cfg.inference.output.dir) / filename
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = UNet3D(
-        in_channels=1,
-        num_classes=cfg.inference.num_classes,
-    )
+    model = build_model(cfg.model)
 
     checkpoint_path = _resolve_checkpoint_path(cfg.inference.checkpoint.path)
     ckpt = torch.load(checkpoint_path, map_location=cfg.inference.device)

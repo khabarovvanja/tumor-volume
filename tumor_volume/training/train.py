@@ -28,7 +28,12 @@ from tumor_volume.utils.logging import setup_mlflow
 
 def run_training(cfg: DictConfig) -> None:
     _prepare_data(cfg)
-    all_cases = list_case_files(cfg.data.images_dir, cfg.data.masks_dir)
+    all_cases = list_case_files(
+        cfg.data.images_dir,
+        cfg.data.masks_dir,
+        ct_dir=_get_optional_cfg_value(cfg.data, "ct_dir"),
+    )
+    _validate_input_channels(all_cases, cfg)
     split_plan = build_split_plan(all_cases, cfg)
 
     fold_summaries = []
@@ -79,14 +84,26 @@ def _prepare_data(cfg: DictConfig) -> None:
     download_data(cfg.data)
 
     img_dir = f"{cfg.data.root_dir}/raw/images"
+    if not Path(img_dir).exists() and Path(f"{cfg.data.root_dir}/raw/pet").exists():
+        img_dir = f"{cfg.data.root_dir}/raw/pet"
     mask_dir = f"{cfg.data.root_dir}/raw/masks"
-    out_img_dir = f"{cfg.data.root_dir}/processed/images"
-    out_mask_dir = f"{cfg.data.root_dir}/processed/masks"
+    out_img_dir = cfg.data.images_dir
+    out_mask_dir = cfg.data.masks_dir
 
     if not Path(out_img_dir).exists() or not any(Path(out_img_dir).iterdir()):
         print("Converting NIfTI to NumPy...")
         nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
         print("Done.")
+
+    ct_dir = _get_optional_cfg_value(cfg.data, "ct_dir")
+    if ct_dir is not None and (
+        not Path(ct_dir).exists() or not any(Path(ct_dir).iterdir())
+    ):
+        raise RuntimeError(
+            "CT directory is configured but empty or missing. "
+            f"Expected preprocessed CT files in '{ct_dir}'. "
+            "CT must be resampled/cropped to the same shape as PET and masks before training."
+        )
 
 
 def _case_id_from_path(path: Path) -> str:
@@ -100,14 +117,25 @@ def _case_id_from_path(path: Path) -> str:
 def _save_split_manifest(split: dict[str, object], output_path: Path) -> None:
     manifest = {"split_name": split["name"]}
     for key in ("train", "val", "test"):
-        manifest[key] = [_case_id_from_path(image_path) for image_path, _ in split[key]]
+        manifest[key] = [_case_id_from_path(case[0]) for case in split[key]]
 
     with output_path.open("w", encoding="utf-8") as file:
         json.dump(manifest, file, indent=2, ensure_ascii=False)
 
 
+def _validate_input_channels(all_cases: list[tuple[Path, ...]], cfg: DictConfig) -> None:
+    actual_channels = 2 if all_cases and len(all_cases[0]) == 3 else 1
+    configured_channels = int(cfg.model.in_channels)
+    if configured_channels != actual_channels:
+        raise ValueError(
+            f"Configured model.in_channels={configured_channels}, "
+            f"but data provides {actual_channels} channel(s). "
+            "Use model.in_channels=2 for PET+CT or model.in_channels=1 for PET-only."
+        )
+
+
 def build_split_plan(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, ...]],
     cfg: DictConfig,
 ) -> list[dict[str, object]]:
     if cfg.training.split_strategy == "kfold":
@@ -116,7 +144,7 @@ def build_split_plan(
 
 
 def _build_holdout_split(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, ...]],
     cfg: DictConfig,
 ) -> dict[str, object]:
     train_ratio = float(cfg.training.train_split)
@@ -158,7 +186,7 @@ def _build_holdout_split(
 
 
 def _build_kfold_plan(
-    all_cases: list[tuple[Path, Path]],
+    all_cases: list[tuple[Path, ...]],
     cfg: DictConfig,
 ) -> list[dict[str, object]]:
     num_folds = int(cfg.training.num_folds)
@@ -374,7 +402,7 @@ def _run_train_epoch(
 @torch.no_grad()
 def evaluate_cases(
     model,
-    cases: list[tuple[Path, Path]],
+    cases: list[tuple[Path, ...]],
     cfg: DictConfig,
     dice_loss,
     ce_loss,
@@ -390,10 +418,15 @@ def evaluate_cases(
     avd_scores = []
     ravd_scores = []
 
-    for image_path, mask_path in tqdm(cases, desc=desc):
-        volume = load_volume(image_path).astype(np.float32)
-        mask = load_volume(mask_path).astype(np.int64)
-        volume = (volume - volume.mean()) / (volume.std() + 1e-6)
+    for case in tqdm(cases, desc=desc):
+        volume = _load_case_input(case)
+        mask = load_volume(case[-1]).astype(np.int64)
+        spatial_shape = volume.shape[1:] if volume.ndim == 4 else volume.shape
+        if tuple(spatial_shape) != tuple(mask.shape):
+            raise ValueError(
+                f"Input and mask shapes differ for {case[0].name}: "
+                f"{spatial_shape} != {mask.shape}"
+            )
 
         logits = sliding_window_inference(
             volume=volume,
@@ -436,6 +469,28 @@ def evaluate_cases(
         "dice_loss": float(np.mean(dice_losses)),
         "ce_loss": float(np.mean(ce_losses)),
     }
+
+
+def _load_case_input(case: tuple[Path, ...]) -> np.ndarray:
+    pet = load_volume(case[0]).astype(np.float32)
+    pet = (pet - pet.mean()) / (pet.std() + 1e-6)
+    if len(case) == 2:
+        return pet
+
+    ct = load_volume(case[1]).astype(np.float32)
+    if ct.shape != pet.shape:
+        raise ValueError(
+            f"PET and CT shapes differ for {case[0].name}: {pet.shape} != {ct.shape}"
+        )
+    ct = (ct - ct.mean()) / (ct.std() + 1e-6)
+    return np.stack([pet, ct], axis=0)
+
+
+def _get_optional_cfg_value(cfg: DictConfig, key: str):
+    value = cfg.get(key, None)
+    if value in (None, "null", "None", ""):
+        return None
+    return value
 
 
 def _select_monitor_metric(metrics: dict[str, float], monitor_metric: str) -> float:

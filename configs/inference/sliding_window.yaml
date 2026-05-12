@@ -1,6 +1,7 @@
 input:
   volume:
     "data/test/first_children/531960/SUV.nii.gz"
+  ct_volume: null
 
 output:
   dir: outputs/inference

@@ -51,7 +51,7 @@ def _normalize_volume(volume: np.ndarray) -> np.ndarray:
     return (volume - volume.mean()) / (volume.std() + 1e-6)
 
 
-def _prepare_nifti_for_inference(input_path: Path):
+def _load_nifti_inference_data(input_path: Path) -> dict:
     original_nii = nib.load(str(input_path))
     original_data = original_nii.get_fdata().astype(np.float32)
     original_spacing = tuple(float(s) for s in original_nii.header.get_zooms()[:3])
@@ -88,7 +88,50 @@ def _prepare_nifti_for_inference(input_path: Path):
         "crop_bbox": crop_bbox,
         "canonical_to_original": canonical_to_original,
     }
-    return _normalize_volume(processed), metadata
+    return {
+        "resampled": resampled,
+        "processed": processed,
+        "metadata": metadata,
+    }
+
+
+def _prepare_nifti_for_inference(input_path: Path):
+    prepared = _load_nifti_inference_data(input_path)
+    return _normalize_volume(prepared["processed"]), prepared["metadata"]
+
+
+def _prepare_pet_ct_nifti_for_inference(pet_path: Path, ct_path: Path):
+    prepared_pet = _load_nifti_inference_data(pet_path)
+    prepared_ct = _load_nifti_inference_data(ct_path)
+    metadata = prepared_pet["metadata"]
+
+    ct_resampled_to_pet = resample_to_spacing(
+        volume=prepared_ct["resampled"],
+        input_spacing=TARGET_SPACING,
+        output_spacing=TARGET_SPACING,
+        is_mask=False,
+        output_shape=metadata["resampled_shape"],
+    ).astype(np.float32)
+    ct_processed = crop_to_bbox(ct_resampled_to_pet, metadata["crop_bbox"]).astype(
+        np.float32
+    )
+
+    pet_processed = prepared_pet["processed"].astype(np.float32)
+    if pet_processed.shape != ct_processed.shape:
+        raise RuntimeError(
+            "Processed PET and CT shapes differ before inference: "
+            f"PET={pet_processed.shape}, CT={ct_processed.shape}"
+        )
+
+    volume = np.stack(
+        [
+            _normalize_volume(pet_processed),
+            _normalize_volume(ct_processed),
+        ],
+        axis=0,
+    )
+    metadata["ct_input_path"] = str(ct_path)
+    return volume, metadata
 
 
 def _restore_mask_to_original_space(mask: np.ndarray, metadata: dict) -> np.ndarray:
@@ -192,12 +235,27 @@ def _render_preview_gif(
 def _run_npy_inference(
     cfg: DictConfig,
     input_path: Path,
+    ct_input_path: Path | None,
     output_dir: Path,
     model,
     checkpoint_path: Path,
 ) -> None:
     volume = np.load(input_path).astype(np.float32)
-    volume = _normalize_volume(volume)
+    if ct_input_path is not None:
+        ct_volume = np.load(ct_input_path).astype(np.float32)
+        if volume.shape != ct_volume.shape:
+            raise RuntimeError(
+                "PET and CT NumPy shapes differ before inference: "
+                f"PET={volume.shape}, CT={ct_volume.shape}"
+            )
+        volume = np.stack(
+            [_normalize_volume(volume), _normalize_volume(ct_volume)],
+            axis=0,
+        )
+    elif volume.ndim == 4:
+        volume = np.stack([_normalize_volume(channel) for channel in volume], axis=0)
+    else:
+        volume = _normalize_volume(volume)
 
     logits = sliding_window_inference(
         volume=volume,
@@ -216,6 +274,7 @@ def _run_npy_inference(
         json.dump(
             {
                 "input_path": str(input_path),
+                "ct_input_path": str(ct_input_path) if ct_input_path is not None else None,
                 "checkpoint_path": str(checkpoint_path),
                 "tumor_volume_ml": float(tumor_volume_ml),
                 "output_mask_path": str(output_dir / "mask.npy"),
@@ -227,6 +286,8 @@ def _run_npy_inference(
 
 def run_inference(cfg: DictConfig):
     input_path = Path(cfg.inference.input.volume)
+    ct_input = _get_optional_cfg_value(cfg.inference.input, "ct_volume")
+    ct_input_path = Path(ct_input) if ct_input is not None else None
     filename = _case_name(input_path)
     output_dir = Path(cfg.inference.output.dir) / filename
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -239,15 +300,21 @@ def run_inference(cfg: DictConfig):
     model.to(cfg.inference.device)
     model.eval()
 
+    _validate_inference_channels(cfg, input_path, ct_input_path)
+
     if input_path.suffix == ".npy":
-        _run_npy_inference(cfg, input_path, output_dir, model, checkpoint_path)
+        _run_npy_inference(cfg, input_path, ct_input_path, output_dir, model, checkpoint_path)
         print(f"Tumor volume saved to {output_dir / 'metrics.json'}")
         return
 
     if not (input_path.name.endswith(".nii.gz") or input_path.suffix == ".nii"):
         raise ValueError("Inference input must be a .nii.gz, .nii, or .npy file.")
 
-    volume, metadata = _prepare_nifti_for_inference(input_path)
+    if ct_input_path is not None:
+        _validate_nifti_path(ct_input_path)
+        volume, metadata = _prepare_pet_ct_nifti_for_inference(input_path, ct_input_path)
+    else:
+        volume, metadata = _prepare_nifti_for_inference(input_path)
     logits = sliding_window_inference(
         volume=volume,
         model=model,
@@ -279,6 +346,7 @@ def run_inference(cfg: DictConfig):
         json.dump(
             {
                 "input_path": str(input_path),
+                "ct_input_path": str(ct_input_path) if ct_input_path is not None else None,
                 "checkpoint_path": str(checkpoint_path),
                 "tumor_volume_ml": float(tumor_volume_ml),
                 "input_image_path": str(output_dir / "image.nii.gz"),
@@ -298,6 +366,40 @@ def run_inference(cfg: DictConfig):
         )
 
     print(f"Tumor volume: {tumor_volume_ml:.2f} ml")
+
+
+def _get_optional_cfg_value(cfg: DictConfig, key: str):
+    value = cfg.get(key, None)
+    if value in (None, "null", "None", ""):
+        return None
+    return value
+
+
+def _validate_inference_channels(
+    cfg: DictConfig,
+    input_path: Path,
+    ct_input_path: Path | None,
+) -> None:
+    if ct_input_path is not None:
+        expected_channels = 2
+    elif input_path.suffix == ".npy":
+        input_shape = np.load(input_path, mmap_mode="r").shape
+        expected_channels = int(input_shape[0]) if len(input_shape) == 4 else 1
+    else:
+        expected_channels = 1
+    configured_channels = int(cfg.model.in_channels)
+    if configured_channels != expected_channels:
+        raise ValueError(
+            f"Configured model.in_channels={configured_channels}, "
+            f"but inference input provides {expected_channels} channel(s). "
+            "Use model.in_channels=2 with inference.input.ct_volume for PET+CT, "
+            "or model.in_channels=1 for PET-only."
+        )
+
+
+def _validate_nifti_path(path: Path) -> None:
+    if not (path.name.endswith(".nii.gz") or path.suffix == ".nii"):
+        raise ValueError(f"Inference input must be a .nii.gz or .nii file: {path}")
 
 
 if __name__ == "__main__":

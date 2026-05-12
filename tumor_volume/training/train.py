@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from tumor_volume.data.dataset import PETPatchDataset, list_case_files, load_volume
 from tumor_volume.data.dvc_utils import download_data
-from tumor_volume.data.preprocess import TARGET_SPACING, nifti2npy
+from tumor_volume.data.preprocess import TARGET_SPACING, nifti2npy, nifti2npy_pet_ct
 from tumor_volume.inference.postprocess import logits_to_mask
 from tumor_volume.inference.sliding_window import sliding_window_inference
 from tumor_volume.models.losses import DiceLoss
@@ -86,24 +86,28 @@ def _prepare_data(cfg: DictConfig) -> None:
     img_dir = f"{cfg.data.root_dir}/raw/images"
     if not Path(img_dir).exists() and Path(f"{cfg.data.root_dir}/raw/pet").exists():
         img_dir = f"{cfg.data.root_dir}/raw/pet"
+    raw_ct_dir = f"{cfg.data.root_dir}/raw/ct"
     mask_dir = f"{cfg.data.root_dir}/raw/masks"
     out_img_dir = cfg.data.images_dir
+    out_ct_dir = _get_optional_cfg_value(cfg.data, "ct_dir")
     out_mask_dir = cfg.data.masks_dir
 
-    if not Path(out_img_dir).exists() or not any(Path(out_img_dir).iterdir()):
-        print("Converting NIfTI to NumPy...")
-        nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
-        print("Done.")
-
-    ct_dir = _get_optional_cfg_value(cfg.data, "ct_dir")
-    if ct_dir is not None and (
-        not Path(ct_dir).exists() or not any(Path(ct_dir).iterdir())
-    ):
-        raise RuntimeError(
-            "CT directory is configured but empty or missing. "
-            f"Expected preprocessed CT files in '{ct_dir}'. "
-            "CT must be resampled/cropped to the same shape as PET and masks before training."
+    if out_ct_dir is not None:
+        print("Converting PET+CT NIfTI to NumPy if needed...")
+        nifti2npy_pet_ct(
+            pet_dir=img_dir,
+            ct_dir=raw_ct_dir,
+            mask_dir=mask_dir,
+            out_pet_dir=out_img_dir,
+            out_ct_dir=out_ct_dir,
+            out_mask_dir=out_mask_dir,
         )
+        print("Done.")
+        return
+
+    print("Converting NIfTI to NumPy if needed...")
+    nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
+    print("Done.")
 
 
 def _case_id_from_path(path: Path) -> str:

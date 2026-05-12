@@ -107,17 +107,64 @@ def save(volume, affine, path):
 
 def preprocess_case(img_path, mask_path, out_img, out_mask):
     img, spacing, affine = load_nii(img_path)
-    mask, _, _ = load_nii(mask_path)
+    mask, mask_spacing, _ = load_nii(mask_path)
 
     mask = (mask > 0).astype(np.uint8)
 
     img = resample(img, spacing, TARGET_SPACING, is_mask=False)
-    mask = resample(mask, spacing, TARGET_SPACING, is_mask=True)
+    mask = resample_to_spacing(
+        volume=mask,
+        input_spacing=mask_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=True,
+        output_shape=img.shape,
+    )
 
     img, mask = crop_nonzero(img, mask)
 
     save(img, affine, out_img)
     save(mask, affine, out_mask)
+
+
+def preprocess_pet_ct_case(pet_path, ct_path, mask_path, out_pet, out_ct, out_mask):
+    pet, pet_spacing, affine = load_nii(pet_path)
+    ct, ct_spacing, _ = load_nii(ct_path)
+    mask, mask_spacing, _ = load_nii(mask_path)
+
+    mask = (mask > 0).astype(np.uint8)
+
+    pet = resample(pet, pet_spacing, TARGET_SPACING, is_mask=False)
+    target_shape = pet.shape
+    ct = resample_to_spacing(
+        volume=ct,
+        input_spacing=ct_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=False,
+        output_shape=target_shape,
+    )
+    mask = resample_to_spacing(
+        volume=mask,
+        input_spacing=mask_spacing,
+        output_spacing=TARGET_SPACING,
+        is_mask=True,
+        output_shape=target_shape,
+    )
+
+    bbox = compute_nonzero_bbox(pet)
+    pet = crop_to_bbox(pet, bbox)
+    ct = crop_to_bbox(ct, bbox)
+    mask = crop_to_bbox(mask, bbox)
+
+    if pet.shape != ct.shape or pet.shape != mask.shape:
+        raise RuntimeError(
+            "Preprocessed PET, CT and mask shapes differ: "
+            f"PET={pet.shape}, CT={ct.shape}, mask={mask.shape}"
+        )
+
+    save(pet, affine, out_pet)
+    save(ct, affine, out_ct)
+    save(mask, affine, out_mask)
+
 
 def _is_valid_output_pair(out_img, out_mask):
     return (
@@ -126,6 +173,26 @@ def _is_valid_output_pair(out_img, out_mask):
         and os.path.getsize(out_img) > 0
         and os.path.getsize(out_mask) > 0
     )
+
+
+def _is_valid_output_triplet(out_pet, out_ct, out_mask):
+    return (
+        os.path.isfile(out_pet)
+        and os.path.isfile(out_ct)
+        and os.path.isfile(out_mask)
+        and os.path.getsize(out_pet) > 0
+        and os.path.getsize(out_ct) > 0
+        and os.path.getsize(out_mask) > 0
+    )
+
+
+def _output_name(name):
+    if name.endswith(".nii.gz"):
+        return name.replace(".nii.gz", f".{SAVE_FORMAT}")
+    if name.endswith(".nii"):
+        return name.replace(".nii", f".{SAVE_FORMAT}")
+    return f"{os.path.splitext(name)[0]}.{SAVE_FORMAT}"
+
 
 def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
     os.makedirs(out_img_dir, exist_ok=True)
@@ -139,10 +206,8 @@ def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
         img_path = os.path.join(img_dir, name)
         mask_path = os.path.join(mask_dir, name)
 
-        out_img = os.path.join(out_img_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}"))
-        out_mask = os.path.join(
-            out_mask_dir, name.replace(".nii.gz", f".{SAVE_FORMAT}")
-        )
+        out_img = os.path.join(out_img_dir, _output_name(name))
+        out_mask = os.path.join(out_mask_dir, _output_name(name))
 
         if not force and _is_valid_output_pair(out_img, out_mask):
             skipped += 1
@@ -153,6 +218,51 @@ def nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir, force=False):
 
     print(
         f"nifti2npy completed: processed={processed}, skipped={skipped}, force={force}"
+    )
+
+
+def nifti2npy_pet_ct(
+    pet_dir,
+    ct_dir,
+    mask_dir,
+    out_pet_dir,
+    out_ct_dir,
+    out_mask_dir,
+    force=False,
+):
+    os.makedirs(out_pet_dir, exist_ok=True)
+    os.makedirs(out_ct_dir, exist_ok=True)
+    os.makedirs(out_mask_dir, exist_ok=True)
+
+    images = sorted(os.listdir(pet_dir))
+    processed = 0
+    skipped = 0
+
+    for name in tqdm(images):
+        pet_path = os.path.join(pet_dir, name)
+        ct_path = os.path.join(ct_dir, name)
+        mask_path = os.path.join(mask_dir, name)
+
+        if not os.path.isfile(ct_path) or not os.path.isfile(mask_path):
+            raise FileNotFoundError(
+                f"Missing CT or mask for '{name}': ct={ct_path}, mask={mask_path}"
+            )
+
+        out_name = _output_name(name)
+        out_pet = os.path.join(out_pet_dir, out_name)
+        out_ct = os.path.join(out_ct_dir, out_name)
+        out_mask = os.path.join(out_mask_dir, out_name)
+
+        if not force and _is_valid_output_triplet(out_pet, out_ct, out_mask):
+            skipped += 1
+            continue
+
+        preprocess_pet_ct_case(pet_path, ct_path, mask_path, out_pet, out_ct, out_mask)
+        processed += 1
+
+    print(
+        "nifti2npy_pet_ct completed: "
+        f"processed={processed}, skipped={skipped}, force={force}"
     )
 
 

@@ -93,21 +93,63 @@ def _prepare_data(cfg: DictConfig) -> None:
     out_mask_dir = cfg.data.masks_dir
 
     if out_ct_dir is not None:
-        print("Converting PET+CT NIfTI to NumPy if needed...")
-        nifti2npy_pet_ct(
-            pet_dir=img_dir,
-            ct_dir=raw_ct_dir,
-            mask_dir=mask_dir,
-            out_pet_dir=out_img_dir,
-            out_ct_dir=out_ct_dir,
-            out_mask_dir=out_mask_dir,
-        )
-        print("Done.")
+        if _processed_pet_ct_ready(out_img_dir, out_ct_dir, out_mask_dir):
+            print("[preprocess] PET+CT processed data already exists, skipping conversion.")
+        else:
+            print("Converting PET+CT NIfTI to NumPy...")
+            nifti2npy_pet_ct(
+                pet_dir=img_dir,
+                ct_dir=raw_ct_dir,
+                mask_dir=mask_dir,
+                out_pet_dir=out_img_dir,
+                out_ct_dir=out_ct_dir,
+                out_mask_dir=out_mask_dir,
+            )
+            print("Done.")
         return
 
-    print("Converting NIfTI to NumPy if needed...")
-    nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
-    print("Done.")
+    if _processed_pet_ready(out_img_dir, out_mask_dir):
+        print("[preprocess] PET processed data already exists, skipping conversion.")
+    else:
+        print("Converting NIfTI to NumPy...")
+        nifti2npy(img_dir, mask_dir, out_img_dir, out_mask_dir)
+        print("Done.")
+
+
+def _processed_pet_ready(images_dir: str | Path, masks_dir: str | Path) -> bool:
+    images_dir = Path(images_dir)
+    masks_dir = Path(masks_dir)
+    if not images_dir.exists() or not masks_dir.exists():
+        return False
+
+    image_files = _non_empty_case_files(images_dir)
+    mask_files = _non_empty_case_files(masks_dir)
+    return bool(image_files) and image_files == mask_files
+
+
+def _processed_pet_ct_ready(
+    images_dir: str | Path,
+    ct_dir: str | Path,
+    masks_dir: str | Path,
+) -> bool:
+    images_dir = Path(images_dir)
+    ct_dir = Path(ct_dir)
+    masks_dir = Path(masks_dir)
+    if not images_dir.exists() or not ct_dir.exists() or not masks_dir.exists():
+        return False
+
+    image_files = _non_empty_case_files(images_dir)
+    ct_files = _non_empty_case_files(ct_dir)
+    mask_files = _non_empty_case_files(masks_dir)
+    return bool(image_files) and image_files == ct_files == mask_files
+
+
+def _non_empty_case_files(directory: Path) -> set[str]:
+    return {
+        _case_id_from_path(path)
+        for path in directory.glob("*")
+        if path.is_file() and path.stat().st_size > 0
+    }
 
 
 def _case_id_from_path(path: Path) -> str:

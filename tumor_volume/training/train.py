@@ -23,6 +23,7 @@ from tumor_volume.models.metrics import (
     relative_absolute_volume_difference,
 )
 from tumor_volume.models.factory import build_model
+from tumor_volume.models.pretrained import load_swin_unetr_pretrained
 from tumor_volume.utils.logging import setup_mlflow
 
 
@@ -283,7 +284,9 @@ def _build_kfold_plan(
 
 
 def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, float]:
-    model = build_model(cfg.model).to(cfg.training.device)
+    model = build_model(cfg.model)
+    _maybe_load_pretrained_weights(model, cfg)
+    model = model.to(cfg.training.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.training.lr)
     dice_loss = DiceLoss()
     ce_loss = torch.nn.CrossEntropyLoss()
@@ -403,6 +406,35 @@ def _train_single_split(cfg: DictConfig, split: dict[str, object]) -> dict[str, 
         "test_avd_ml": test_metrics["avd_ml"],
         "test_ravd_percent": test_metrics["ravd_percent"],
     }
+
+
+def _maybe_load_pretrained_weights(model, cfg: DictConfig) -> None:
+    pretrained_path = _get_optional_cfg_value(cfg.model, "pretrained_path")
+    if pretrained_path is None:
+        return
+    if getattr(cfg.model, "architecture", None) != "swin_unetr":
+        raise ValueError("model.pretrained_path is supported only for Swin-UNETR.")
+
+    summary = load_swin_unetr_pretrained(
+        model=model,
+        checkpoint_path=pretrained_path,
+        adapt_input=bool(cfg.model.get("pretrained_adapt_input", True)),
+        ct_channel_index=int(cfg.model.get("pretrained_ct_channel_index", 1)),
+    )
+    print(
+        "[pretrained] Loaded Swin-UNETR weights: "
+        f"loaded={summary['loaded']}, adapted={summary['adapted']}, "
+        f"skipped_shape={summary['skipped_shape']}, "
+        f"skipped_missing={summary['skipped_missing']}"
+    )
+    mlflow.log_params(
+        {
+            "model.pretrained_loaded": summary["loaded"],
+            "model.pretrained_adapted": summary["adapted"],
+            "model.pretrained_skipped_shape": summary["skipped_shape"],
+            "model.pretrained_skipped_missing": summary["skipped_missing"],
+        }
+    )
 
 
 def _run_train_epoch(
